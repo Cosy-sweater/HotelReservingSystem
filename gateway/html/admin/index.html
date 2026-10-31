@@ -1,36 +1,214 @@
 <!DOCTYPE html>
 <html>
-<head><title>Admin Dashboard</title></head>
-<body style="font-family:sans-serif; max-width:700px; margin:2rem auto; background:#f8f9fa;">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/css/global.css">
+    <style>
+        body { font-family: sans-serif; max-width: 1050px; margin: 2rem auto; background: #f8f9fa; padding: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; }
+        input, select { padding: 8px; margin: 4px 0; width: 100%; box-sizing: border-box; border: 1px solid #ced4da; border-radius: 6px; }
+        button { padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; background: white; margin-top: 10px; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; font-size: 0.9rem; }
+        tr.clickable-row { cursor: pointer; transition: background 0.15s; }
+        tr.clickable-row:hover { background: #eff6ff; }
+    </style>
+</head>
+<body>
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1>Protected Hotel Admin Dashboard</h1>
-        <button onclick="logout()">Log Out</button>
+        <h1>Hotel Admin Dashboard</h1>
+        <button onclick="logout()" style="background:#dc2626;">Log Out</button>
     </div>
-    <button onclick="resetAll()" style="padding:8px 12px; margin-bottom:15px;">Reset All Bookings & Locks</button>
-    <table border="1" cellpadding="8" style="border-collapse:collapse; width:100%; background:#fff;">
-        <thead><tr><th>Room</th><th>Type</th><th>DB Status</th><th>Redis Lock</th></tr></thead>
-        <tbody id="admin-table"></tbody>
-    </table>
+
+    <!-- 1. ROOM CREATION / EDIT FORM (Populated when clicking any room row) -->
+    <div class="card">
+        <h3>Create / Edit Room <small style="font-weight:normal; color:#666;">(Click any room in the table below to load its values)</small></h3>
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <div><label>Room Number *</label><input id="r_num" type="number" placeholder="103" /></div>
+            <div><label>Floor *</label><input id="r_floor" type="number" value="1" /></div>
+            <div><label>Room Type *</label><input id="r_type" placeholder="Deluxe Double" /></div>
+            <div><label>Sleeping Places *</label><input id="r_beds" type="number" value="2" /></div>
+            <div><label>Area (sqm) *</label><input id="r_area" type="number" step="0.1" value="25.0" /></div>
+            <div><label>Price ($/night) *</label><input id="r_price" type="number" value="120" /></div>
+            <div><label>Pets Allowed?</label><select id="r_pets"><option value="false">No</option><option value="true">Yes</option></select></div>
+            <div><label>Window View (Optional / Nullable)</label><input id="r_view" placeholder="Leave blank for NULL" /></div>
+            <div><label>Additional Info (Optional, comma-sep)</label><input id="r_info" placeholder="Leave blank for NULL" /></div>
+        </div>
+        <button onclick="saveRoom()" style="margin-top: 12px;">Save / Update Room</button>
+    </div>
+
+    <!-- 2. SMART RESERVATION FORM -->
+    <div class="card">
+        <h3>Create Reservation for User</h3>
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+            <div><label>Room Number *</label><input id="book_room_num" type="number" placeholder="101" /></div>
+            <div><label>Username *</label><input id="book_username" placeholder="alice or new_guest" /></div>
+            <div><label>Check-In *</label><input id="book_in" type="datetime-local" /></div>
+            <div><label>Check-Out *</label><input id="book_out" type="datetime-local" /></div>
+        </div>
+
+        <!-- Hidden unless user does not exist (or admin wants to add passport/phone) -->
+        <div id="new-user-fields" style="display:none; margin-top:12px; padding:12px; background:#fffbeb; border:1px solid #f59e0b; border-radius:6px;">
+            <strong style="color:#b45309;">User does not exist yet! Fill details below to register & book automatically:</strong>
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top:8px;">
+                <div><label>New User Password</label><input id="book_pass" type="password" value="guest123" /></div>
+                <div><label>Passport Number</label><input id="book_passport" placeholder="AA1234567" /></div>
+                <div><label>Phone Number</label><input id="book_phone" placeholder="+370 600 00000" /></div>
+            </div>
+        </div>
+
+        <button onclick="manualBook(false)" style="margin-top: 12px;">Book Room</button>
+        <button id="confirm-create-btn" onclick="manualBook(true)" style="display:none; margin-top: 12px; background:#d97706;">Create User & Complete Booking</button>
+    </div>
+
+    <!-- 3. CLICKABLE ROOM INVENTORY TABLE -->
+    <div class="card">
+        <h3>Rooms (Click a row to edit)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Room</th>
+                    <th>Type / Floor</th>
+                    <th>Beds / Area / View</th>
+                    <th>Pets / Extra Info</th>
+                    <th>Price</th>
+                    <th>Current & Upcoming Bookings</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="admin-table"></tbody>
+        </table>
+    </div>
 
     <script>
-        async function refreshAdmin() {
-            const res = await fetch("/api/rooms");
-            const rooms = await res.json();
-            document.getElementById("admin-table").innerHTML = rooms.map(r => `
-                <tr>
-                    <td>${r.room_number}</td>
-                    <td>${r.room_type}</td>
-                    <td>${r.is_booked ? `Booked by <b>${r.booked_by}</b>` : "Available"}</td>
-                    <td>${r.is_locked ? `Locked by ${r.locked_by} (${r.lock_expires_in}s)` : "None"}</td>
-                </tr>
-            `).join("");
+        let cachedRooms = [];
+
+        // Set default check-in (now) and check-out (+1 day)
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        const tomorrow = new Date(now.getTime() + 86400000);
+        document.getElementById("book_in").value = now.toISOString().slice(0,16);
+        document.getElementById("book_out").value = tomorrow.toISOString().slice(0,16);
+
+        async function loadAdminRooms(quick = false) {
+            try {
+                const res = await fetch(`/api/rooms${quick ? '?quick=true' : ''}`);
+                if (res.status === 401) { window.location.href = "/login"; return; }
+                if (!res.ok) return;
+
+                cachedRooms = await res.json();
+                document.getElementById("admin-table").innerHTML = cachedRooms.map(r => `
+                    <tr class="clickable-row" onclick="populateRoomForm(${r.room_number})">
+                        <td><b>#${r.room_number}</b></td>
+                        <td>${r.room_type}<br><small>Floor ${r.floor}</small></td>
+                        <td>${r.sleeping_places} Beds | ${r.area_sqm} m²<br><small>View: ${r.window_view ?? '<i>None</i>'}</small></td>
+                        <td>Pets: ${r.pets_allowed ? 'Yes' : 'No'}<br><small>${r.additional_info ? r.additional_info.join(', ') : '<i>None</i>'}</small></td>
+                        <td>$${r.price}</td>
+                        <td>
+                            ${r.reservations.length
+                                ? r.reservations.map(b => `<div><b>${b.username}</b> (${b.status})<br><small>${b.check_in.slice(0,16).replace('T',' ')} &rarr; ${b.check_out.slice(0,16).replace('T',' ')}</small></div>`).join('<hr style="margin:4px 0;">')
+                                : '<span style="color:green;">No active bookings</span>'
+                            }
+                        </td>
+                        <td onclick="event.stopPropagation()">
+                            ${r.reservations.length
+                                ? `<button onclick="cancelReservation(${r.room_number})" style="background:#dc2626; padding:6px 10px;">Cancel All</button>`
+                                : ''
+                            }
+                        </td>
+                    </tr>
+                `).join("");
+            } catch (e) {
+                console.warn("Temporary network glitch:", e);
+            }
         }
 
-        async function resetAll() {
-            const res = await fetch("/api/admin/reset", {method: "POST"});
+        function populateRoomForm(roomNumber) {
+            const r = cachedRooms.find(item => item.room_number === roomNumber);
+            if (!r) return;
+            document.getElementById("r_num").value = r.room_number;
+            document.getElementById("r_floor").value = r.floor;
+            document.getElementById("r_type").value = r.room_type;
+            document.getElementById("r_beds").value = r.sleeping_places;
+            document.getElementById("r_area").value = r.area_sqm;
+            document.getElementById("r_price").value = r.price;
+            document.getElementById("r_pets").value = r.pets_allowed ? "true" : "false";
+            document.getElementById("r_view").value = r.window_view ?? "";
+            document.getElementById("r_info").value = r.additional_info ? r.additional_info.join(", ") : "";
+            // Also paste room number into the booking box for convenience
+            document.getElementById("book_room_num").value = r.room_number;
+        }
+
+        async function saveRoom() {
+            const viewVal = document.getElementById("r_view").value.trim();
+            const infoRaw = document.getElementById("r_info").value.split(",").map(s => s.trim()).filter(Boolean);
+
+            const payload = {
+                room_number: parseInt(document.getElementById("r_num").value),
+                floor: parseInt(document.getElementById("r_floor").value),
+                room_type: document.getElementById("r_type").value.trim(),
+                sleeping_places: parseInt(document.getElementById("r_beds").value),
+                area_sqm: parseFloat(document.getElementById("r_area").value),
+                price: parseInt(document.getElementById("r_price").value),
+                pets_allowed: document.getElementById("r_pets").value === "true",
+                window_view: viewVal.length > 0 ? viewVal : null,
+                additional_info: infoRaw.length > 0 ? infoRaw : null
+            };
+
+            const res = await fetch("/api/admin/rooms", {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(payload)
+            });
             const data = await res.json();
             alert(data.message || data.error);
-            refreshAdmin();
+            loadAdminRooms(false);
+        }
+
+        async function manualBook(createNewUser = false) {
+            const payload = {
+                room_number: parseInt(document.getElementById("book_room_num").value),
+                username: document.getElementById("book_username").value.trim(),
+                check_in: document.getElementById("book_in").value,
+                check_out: document.getElementById("book_out").value,
+                create_new_user: createNewUser,
+                password: document.getElementById("book_pass").value,
+                passport_number: document.getElementById("book_passport").value.trim() || null,
+                phone: document.getElementById("book_phone").value.trim() || null
+            };
+
+            const res = await fetch("/api/admin/book", {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (res.status === 404 && data.code === "USER_NOT_FOUND") {
+                document.getElementById("new-user-fields").style.display = "block";
+                document.getElementById("confirm-create-btn").style.display = "inline-block";
+                return;
+            }
+
+            if (!res.ok) {
+                alert(`${data.error}${data.conflicts ? '\nConflicts: ' + JSON.stringify(data.conflicts) : ''}`);
+                return;
+            }
+
+            alert(data.message);
+            document.getElementById("new-user-fields").style.display = "none";
+            document.getElementById("confirm-create-btn").style.display = "none";
+            loadAdminRooms(false);
+        }
+
+        async function cancelReservation(roomNum) {
+            if (!confirm(`Cancel active/upcoming reservations for Room #${roomNum}?`)) return;
+            const res = await fetch(`/api/admin/cancel/${roomNum}`, {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({})
+            });
+            const data = await res.json();
+            alert(data.message || data.error);
+            loadAdminRooms(false);
         }
 
         async function logout() {
@@ -38,8 +216,9 @@
             window.location.href = "/login";
         }
 
-        refreshAdmin();
-        setInterval(refreshAdmin, 2000);
+        // Initial load runs full DB state sync; background timer uses quick=true
+        loadAdminRooms(false);
+        setInterval(() => loadAdminRooms(true), 4000);
     </script>
 </body>
 </html>

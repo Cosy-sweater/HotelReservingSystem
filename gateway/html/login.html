@@ -8,11 +8,16 @@
     <link href="css/global.css" rel="stylesheet">
     <link href="css/login.css" rel="stylesheet">
   </head>
+
   <body>
     <div class="window">
       <h2>Hotel System Login</h2>
-      <input id="username" placeholder="Username (alice or admin)"/>
-      <input id="password" placeholder="Password (guest123 or admin123)"/>
+      <input id="username" placeholder="Username"/>
+      <input id="password" type="password" placeholder="Password"/>
+      <div class="checkbox-container">
+        <input class="show-password-checkbox" type="checkbox" onclick="revealPassword()">
+        <p>Show Password</p>
+      </div>
       <p class="error-message"></p>
       <div class="button-container">
         <button onclick="login()">Sign In</button>

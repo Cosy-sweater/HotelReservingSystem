@@ -9,13 +9,81 @@
     <link href="/guest/styles/main.css" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <h1>Hotel Guest Portal</h1>
-        <button onclick="logout()">Log Out</button>
-    </header>
-    <hr/>
-    <div id="rooms">Loading rooms...</div>
+    <div class="top-bar">
+        <div>
+            <h1 style="margin:0;">Available Hotel Rooms</h1>
+            <small style="color:#64748b;">Sorted automatically by availability</small>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span>Welcome, <b id="user-display">...</b></span>
+            <a id="admin-btn" href="/admin/" style="display:none; padding:8px 12px; background:#475569; color:white; border-radius:6px; text-decoration:none; font-size:0.85rem;">Admin Panel</a>
+            <button onclick="logout()" style="padding:8px 12px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer;">Log Out</button>
+        </div>
+    </div>
 
+    <!-- FILTER PANEL -->
+    <div class="filter-panel">
+        <div class="filter-grid">
+            <div class="filter-group">
+                <label>Check-In Date & Time</label>
+                <input type="datetime-local" id="f_in" onchange="renderRooms()" />
+            </div>
+            <div class="filter-group">
+                <label>Check-Out Date & Time</label>
+                <input type="datetime-local" id="f_out" onchange="renderRooms()" />
+            </div>
+            <div class="filter-group">
+                <label>Min Sleeping Places</label>
+                <select id="f_beds" onchange="renderRooms()">
+                    <option value="0">Any</option>
+                    <option value="1">1+ Beds</option>
+                    <option value="2">2+ Beds</option>
+                    <option value="3">3+ Beds</option>
+                    <option value="4">4+ Beds</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Max Price ($ / night)</label>
+                <input type="number" id="f_price" placeholder="No limit" oninput="renderRooms()" />
+            </div>
+            <div class="filter-group">
+                <label>Search Type / View / Info</label>
+                <input type="text" id="f_search" placeholder="e.g. Jacuzzi, Ocean..." oninput="renderRooms()" />
+            </div>
+            <div class="filter-group">
+                <label>Secondary Sort</label>
+                <select id="f_sort" onchange="renderRooms()">
+                    <option value="price_asc">Price: Low to High</option>
+                    <option value="price_desc">Price: High to Low</option>
+                    <option value="area_desc">Area: Largest First</option>
+                    <option value="room_asc">Room Number</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="filter-toggles">
+            <div style="display:flex; gap:18px; flex-wrap:wrap;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="f_pets" onchange="renderRooms()" />
+                    Pets Allowed Only 🐾
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="f_avail_only" onchange="renderRooms()" />
+                    Hide Unavailable Rooms
+                </label>
+            </div>
+            <button onclick="resetFilters()" style="padding:6px 12px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-size:0.85rem;">
+                Reset Filters
+            </button>
+        </div>
+    </div>
+
+    <!-- ROOM CARDS CONTAINER -->
+    <div id="rooms-container" class="rooms-container">
+        Loading rooms...
+    </div>
+
+    <script src="../js/common.js"></script>
     <script src="/guest/scripts/index.js"></script>
 </body>
 </html>

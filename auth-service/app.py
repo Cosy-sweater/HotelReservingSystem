@@ -27,6 +27,9 @@ def init_auth_db():
             role VARCHAR(20) NOT NULL DEFAULT 'user'
         );
     """)
+    cur.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS passport_number VARCHAR(50);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);")
     admin_hash = generate_password_hash("admin123")
     guest_hash = generate_password_hash("guest123")
     cur.execute("""
@@ -85,20 +88,19 @@ def register():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "")
+    passport_number = (data.get("passport_number") or "").strip() or None
+    phone = (data.get("phone") or "").strip() or None
 
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
-    if len(password) < 4:
-        return jsonify({"error": "Password must be at least 4 characters"}), 400
 
     conn = get_db()
     cur = conn.cursor()
     try:
-        # Always force role='user' for public registrations
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, 'user');",
-            (username, generate_password_hash(password))
-        )
+        cur.execute("""
+            INSERT INTO users (username, password_hash, role, passport_number, phone)
+            VALUES (%s, %s, 'user', %s, %s);
+        """, (username, generate_password_hash(password), passport_number, phone))
         conn.commit()
     except psycopg2.IntegrityError:
         conn.rollback()
@@ -107,23 +109,12 @@ def register():
         cur.close()
         conn.close()
 
-    # Automatically create a Redis session and log the new guest in!
     session_id = secrets.token_hex(32)
     cache.hset(f"session:{session_id}", mapping={"username": username, "role": "user"})
     cache.expire(f"session:{session_id}", 86400)
 
-    resp = make_response(jsonify({
-        "message": f"Welcome, {username}!",
-        "username": username,
-        "role": "user"
-    }))
-    resp.set_cookie(
-        "session_id",
-        session_id,
-        httponly=True,
-        samesite="Lax",
-        path="/"
-    )
+    resp = make_response(jsonify({"username": username, "role": "user"}))
+    resp.set_cookie("session_id", session_id, httponly=True, samesite="Lax", path="/")
     return resp
 
 @app.route("/auth/me", methods=["GET"])

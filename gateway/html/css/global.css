@@ -32,6 +32,8 @@ img {
   width: 100%;
 }
 
-button {
-  font: inherit;
+input, button {
+    font: inherit;
+    border: solid 2px;
+    border-radius: .75rem;
 }
