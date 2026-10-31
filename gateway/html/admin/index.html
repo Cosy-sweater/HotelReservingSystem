@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><title>Admin Dashboard</title></head>
+<body style="font-family:sans-serif; max-width:700px; margin:2rem auto; background:#f8f9fa;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1>Protected Hotel Admin Dashboard</h1>
+        <button onclick="logout()">Log Out</button>
+    </div>
+    <button onclick="resetAll()" style="padding:8px 12px; margin-bottom:15px;">Reset All Bookings & Locks</button>
+    <table border="1" cellpadding="8" style="border-collapse:collapse; width:100%; background:#fff;">
+        <thead><tr><th>Room</th><th>Type</th><th>DB Status</th><th>Redis Lock</th></tr></thead>
+        <tbody id="admin-table"></tbody>
+    </table>
+
+    <script>
+        async function refreshAdmin() {
+            const res = await fetch("/api/rooms");
+            const rooms = await res.json();
+            document.getElementById("admin-table").innerHTML = rooms.map(r => `
+                <tr>
+                    <td>${r.room_number}</td>
+                    <td>${r.room_type}</td>
+                    <td>${r.is_booked ? `Booked by <b>${r.booked_by}</b>` : "Available"}</td>
+                    <td>${r.is_locked ? `Locked by ${r.locked_by} (${r.lock_expires_in}s)` : "None"}</td>
+                </tr>
+            `).join("");
+        }
+
+        async function resetAll() {
+            const res = await fetch("/api/admin/reset", {method: "POST"});
+            const data = await res.json();
+            alert(data.message || data.error);
+            refreshAdmin();
+        }
+
+        async function logout() {
+            await fetch("/auth/logout", {method: "POST"});
+            window.location.href = "/login";
+        }
+
+        refreshAdmin();
+        setInterval(refreshAdmin, 2000);
+    </script>
+</body>
+</html>

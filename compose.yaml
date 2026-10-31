@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hotel_admin
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: hotel_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hotel_admin -d hotel_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build: ./auth-service
+    environment:
+      DB_HOST: db
+      POSTGRES_USER: hotel_admin
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: hotel_db
+      REDIS_HOST: redis
+    volumes:
+      - ./auth-service:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    environment:
+      DB_HOST: db
+      POSTGRES_USER: hotel_admin
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: hotel_db
+      REDIS_HOST: redis
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/html:/usr/share/nginx/html:ro
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - auth-service
+      - backend
+
+volumes:
+  pgdata:
