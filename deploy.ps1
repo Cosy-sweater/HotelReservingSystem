@@ -12,7 +12,7 @@ if ($swarmStatus -ne "active") {
 }
 
 Write-Host "=== [3/4] Deploying 5-Service Stack with Network Isolation ===" -ForegroundColor Cyan
-docker stack deploy -c compose.yaml hotel_cluster
+docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
 
 Write-Host "=== [4/4] Verifying Cluster Services & Replicas ===" -ForegroundColor Cyan
 Start-Sleep -Seconds 5

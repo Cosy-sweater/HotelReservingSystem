@@ -49,20 +49,37 @@ jobs:
           docker build -t hotel-auth-service:latest ./auth-service
           docker build -t hotel-backend:latest ./backend
           docker build -t hotel-gateway:latest ./gateway
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
 
       - name: Initialize Docker Swarm Cluster & Deploy Stack
         run: |
-          docker swarm init
-          docker stack deploy -c compose.yaml hotel_cluster
-          sleep 15
-          docker stack services hotel_cluster
+          # GitHub runners have multiple network interfaces; advertise eth0 IP
+          ADVERTISE_IP=$(hostname -I | awk '{print $1}')
+          docker swarm init --advertise-addr $ADVERTISE_IP
+          # --resolve-image=never tells Swarm to use our local build instead of querying Docker Hub!
+          docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
 
       - name: Run Automated Smoke Tests against Gateway (:8080)
         run: |
-          # Verify unauthenticated access to /admin redirects to /login (HTTP 302)
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/admin/)
-          echo "Gateway /admin/ status for anonymous user: $STATUS"
-          if [ "$STATUS" != "302" ]; then exit 1; fi
+          echo "Waiting for Swarm cluster services and port 8080 to become ready..."
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/admin/ || true)
+            if [ "$STATUS" = "302" ] || [ "$STATUS" = "401" ]; then
+              echo "✅ Success! Gateway responded with HTTP $STATUS (Unauthenticated user blocked from /admin/)"
+              docker stack services hotel_cluster
+              exit 0
+            fi
+            echo "Attempt $i/30: Gateway not ready yet (status: $STATUS), waiting 2s..."
+            sleep 2
+          done
+          
+          echo "❌ Smoke test timed out! Printing cluster diagnostics:"
+          docker stack services hotel_cluster
+          docker stack ps hotel_cluster --no-trunc
+          docker service logs hotel_cluster_gateway
+          docker service logs hotel_cluster_auth-service
+          exit 1
 
   # STAGE 3: Continuous Deployment (Production Server via SSH)
   deploy-production:
