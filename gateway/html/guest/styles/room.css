@@ -1,0 +1,96 @@
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    background: #d3d3d3;
+    color: #1e293b;
+}
+
+.main-page-button {
+    text-decoration: none;
+    text-underline-offset: 5px;
+    color: #2563eb;
+    font-weight: 600;
+}
+
+.main-page-button:hover {
+    text-decoration: underline;
+}
+
+.card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    box-shadow: 4px 3px 7px -1px rgba(0, 0, 0, 0.55);
+}
+
+.tag {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-right: 6px;
+    display: inline-block;
+    margin-top: 4px;
+}
+
+.free-banner {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    margin-top: 12px;
+}
+
+.free-now {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.free-later {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+input, select {
+    width: 100%;
+    padding: 9px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-sizing: border-box;
+    appearance: none;
+}
+
+button {
+    padding: 11px 18px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    background: #2563eb;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+button.pay-btn {
+    background: #16a34a;
+    width: 100%;
+    margin-top: 10px;
+}
+
+button.pay-btn:hover {
+    background: #15803d;
+}
+
+.date-selection-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 15px;
+}

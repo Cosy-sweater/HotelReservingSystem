@@ -3,26 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <title>Rent Room - Hotel Portal</title>
-    <link rel="stylesheet" href="/css/global.css">
-    <style>
-        body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 1.5rem; background: #f8fafc; color: #1e293b; }
-        .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.5rem; margin-top: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
-        .tag { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; margin-right: 6px; display: inline-block; margin-top: 4px; }
-        input { width: 100%; padding: 9px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
-        button { padding: 11px 18px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; color: #fff; background: #2563eb; }
-        button.pay-btn { background: #16a34a; }
-    </style>
+    <link href="../css/fonts.css" rel="stylesheet">
+    <link href="../css/global.css" rel="stylesheet">
+    <link href="/guest/styles/room.css" rel="stylesheet">
 </head>
 <body>
-    <a href="/" style="text-decoration:none; color:#2563eb; font-weight:600;">&larr; Back to Room Catalog</a>
+    <a class="main-page-button" href="/">&larr; Back to Room Catalog</a>
 
     <div id="room-box" class="card">Loading room details...</div>
 
     <div class="card">
-        <h3 style="margin-top:0;">Select Rental Dates & Times</h3>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:15px;">
+        <h3>Select Rental Dates & Times</h3>
+        <div class="date-selection-container">
             <div>
-                <label style="font-size:0.85rem; font-weight:600;">Check-In</label>
+                <label style="font-size:0.85rem; font-weight:600;">Check-In (Earliest Available Set Automatically)</label>
                 <input type="datetime-local" id="check_in" />
             </div>
             <div>
@@ -36,103 +30,6 @@
     </div>
 
     <script src="/js/common.js"></script>
-    <script>
-        const params = new URLSearchParams(window.location.search);
-        const roomNumber = parseInt(params.get("id"));
-        let currentUser = null;
-
-        if (!roomNumber) window.location.href = "/";
-
-        // Pre-fill dates passed from the catalog filter bar
-        const now = new Date();
-        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-        const tomorrow = new Date(now.getTime() + 86400000);
-        document.getElementById("check_in").value = params.get("in") || now.toISOString().slice(0, 16);
-        document.getElementById("check_out").value = params.get("out") || tomorrow.toISOString().slice(0, 16);
-
-        async function init() {
-            currentUser = await getCurrentUser();
-            if (!currentUser) { window.location.href = "/login"; return; }
-            await loadRoom(false);
-            setInterval(() => loadRoom(true), 3000);
-        }
-
-        async function loadRoom(quick = false) {
-            const res = await fetch(`/api/rooms${quick ? '?quick=true' : ''}`);
-            if (!res.ok) return;
-            const rooms = await res.json();
-            const r = rooms.find(item => item.room_number === roomNumber);
-            if (!r) {
-                document.getElementById("room-box").innerHTML = "<h2>Room not found</h2>";
-                return;
-            }
-
-            const tagsHtml = Array.isArray(r.additional_info) && r.additional_info.length
-                ? r.additional_info.map(t => `<span class="tag">${t}</span>`).join("")
-                : `<i>None</i>`;
-
-            const scheduleHtml = (r.reservations || []).length
-                ? `<ul>` + r.reservations.map(b => `<li>Reserved: <b>${b.check_in.slice(0,16).replace('T',' ')}</b> &rarr; <b>${b.check_out.slice(0,16).replace('T',' ')}</b> (${b.status})</li>`).join("") + `</ul>`
-                : `<p style="color:#15803d; margin:4px 0;">No upcoming reservations—wide open!</p>`;
-
-            document.getElementById("room-box").innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:start;">
-                    <div>
-                        <h1 style="margin:0;">Room #${r.room_number} — ${r.room_type} (${r.area_sqm} m²)</h1>
-                        <p style="color:#475569;">Floor ${r.floor} | 🛏️ ${r.sleeping_places} Sleeping Places | 🪟 ${r.window_view ?? 'Standard'} | ${r.pets_allowed ? '🐾 Pets Allowed' : '🚫 No Pets'}</p>
-                    </div>
-                    <div style="font-size:1.5rem; font-weight:800; color:#15803d;">$${r.price}<small style="font-size:0.85rem; color:#64748b;">/night</small></div>
-                </div>
-                <div><b>Additional Info:</b><br/>${tagsHtml}</div>
-                <hr style="margin:15px 0; border:0; border-top:1px solid #e2e8f0;"/>
-                <div><b>Booked Timeframes:</b>${scheduleHtml}</div>
-            `;
-
-            const myHold = (r.holds || []).find(h => h.username === currentUser.username);
-            const actionArea = document.getElementById("action-area");
-
-            if (myHold) {
-                actionArea.innerHTML = `
-                    <p style="color:#b45309; font-weight:600;">You hold this room (${myHold.ttl}s left) for ${myHold.check_in.slice(0,16).replace('T',' ')} &rarr; ${myHold.check_out.slice(0,16).replace('T',' ')}</p>
-                    <button class="pay-btn" onclick="completePayment()">Complete Payment & Confirm Reservation</button>
-                `;
-            } else {
-                actionArea.innerHTML = `<button onclick="holdRoom()">1. Hold Room for Selected Dates (10 Min Lock)</button>`;
-            }
-        }
-
-        async function holdRoom() {
-            const conflictBox = document.getElementById("conflict-box");
-            conflictBox.style.display = "none";
-
-            const res = await fetch(`/api/hold/${roomNumber}`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({
-                    check_in: document.getElementById("check_in").value,
-                    check_out: document.getElementById("check_out").value
-                })
-            });
-            const data = await res.json();
-
-            if (!res.ok) {
-                conflictBox.style.display = "block";
-                conflictBox.innerHTML = `<b>${data.error}</b>` + (data.conflicts
-                    ? `<ul>` + data.conflicts.map(c => `<li>${c.type.toUpperCase()}: ${c.check_in.slice(0,16).replace('T',' ')} to ${c.check_out.slice(0,16).replace('T',' ')}</li>`).join("") + `</ul>`
-                    : "");
-                return;
-            }
-            loadRoom(false);
-        }
-
-        async function completePayment() {
-            const res = await fetch(`/api/pay/${roomNumber}`, { method: "POST" });
-            const data = await res.json();
-            alert(data.message || data.error);
-            if (res.ok) window.location.href = "/";
-        }
-
-        init();
-    </script>
+    <script src="/guest/scripts/room.js"></script>
 </body>
 </html>
