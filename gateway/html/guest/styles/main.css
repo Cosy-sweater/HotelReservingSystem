@@ -1,27 +1,60 @@
+/* Global */
 body {
     font-family: system-ui, -apple-system, sans-serif;
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 1.5rem;
-    background: #f8fafc;
+    background: #d3d3d3;
     color: #1e293b;
 }
 
-.top-bar {
+button {
+    padding: .5rem .8rem;
+    border-radius: .75rem;
+    border: solid 1px black;
+    cursor: pointer;
+}
+
+input, select {
+    min-height: 2.5rem;
+}
+
+input:hover, select:hover, button:hover {
+    background-color: #96abba;
+}
+
+a {
+    text-decoration: none;
+}
+
+/* header */
+header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.25rem;
+    padding: 1.25rem 2rem;
 }
 
-/* Filter Bar */
+.header-user-menu {
+    display: flex;
+    padding: .5rem 1rem;
+    align-items: center;
+    gap: 4rem;
+}
+
+.logout-button {
+    background-color: lightcoral;
+}
+
+/* filter */
 .filter-panel {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: #ededed;
+    border: 2px solid #e2e8f0;
     border-radius: 10px;
     padding: 1rem 1.25rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .filter-grid {
@@ -46,7 +79,6 @@ body {
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     font-size: 0.9rem;
-    box-sizing: border-box;
     appearance: none;
 }
 
@@ -77,24 +109,26 @@ body {
     gap: 14px;
     max-height: calc(100vh - 18rem);
     overflow-y: auto;
-    padding-right: 6px;
+    padding: 1rem;
 }
 
 .room-card {
-    flex-shrink: 0;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 1.25rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
+    background: #ededed;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 2px 3px 11px 3px rgba(0, 0, 0, 0.55);
     gap: 1.5rem;
     transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .room-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.46);
 }
 
 .room-card.unavailable {
@@ -113,6 +147,11 @@ body {
     font-size: 1.2rem;
     font-weight: 700;
     margin: 0;
+}
+
+.room-specs {
+    text-decoration: underline;
+    text-underline-offset: 5px;
 }
 
 .area-badge {
@@ -216,4 +255,12 @@ body {
     background: #ffffff;
     border-color: #cbd5e1;
     color: #334155;
+}
+
+.label-no-rooms {
+    text-align: center;
+    padding: 2rem;
+    color: #64748b;
+    background: #fff;
+    border-radius: 10px;
 }

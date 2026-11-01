@@ -1,0 +1,78 @@
+name: Hotel Platform CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/hotel
+
+jobs:
+  # STAGE 1: Continuous Integration (Static Analysis & Syntax Check)
+  lint-and-validate:
+    name: 1. Lint & Validate Microservices
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies & Flake8
+        run: |
+          pip install flake8
+          pip install -r auth-service/requirements.txt
+          pip install -r backend/requirements.txt
+
+      - name: Check Python syntax & critical errors
+        run: |
+          flake8 auth-service/ backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          python -m py_compile auth-service/app.py backend/app.py
+
+  # STAGE 2: Build & Push Container Images
+  build-and-test-stack:
+    name: 2. Build 5-Container Stack & Integration Test
+    needs: lint-and-validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build all container images
+        run: |
+          docker build -t hotel-auth-service:latest ./auth-service
+          docker build -t hotel-backend:latest ./backend
+          docker build -t hotel-gateway:latest ./gateway
+
+      - name: Initialize Docker Swarm Cluster & Deploy Stack
+        run: |
+          docker swarm init
+          docker stack deploy -c compose.yaml hotel_cluster
+          sleep 15
+          docker stack services hotel_cluster
+
+      - name: Run Automated Smoke Tests against Gateway (:8080)
+        run: |
+          # Verify unauthenticated access to /admin redirects to /login (HTTP 302)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/admin/)
+          echo "Gateway /admin/ status for anonymous user: $STATUS"
+          if [ "$STATUS" != "302" ]; then exit 1; fi
+
+  # STAGE 3: Continuous Deployment (Production Server via SSH)
+  deploy-production:
+    name: 3. Deploy to Cluster
+    needs: build-and-test-stack
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Stack to Production Swarm Manager
+        run: |
+          echo "Deploying verified images to Docker Swarm cluster..."
+          # For remote SSH deployment in production:
+          # ssh user@prod-server "cd /opt/hotel-app && git pull && docker stack deploy -c compose.yaml hotel_cluster"

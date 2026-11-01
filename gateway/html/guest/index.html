@@ -9,54 +9,51 @@
     <link href="/guest/styles/main.css" rel="stylesheet">
 </head>
 <body>
-    <div class="top-bar">
-        <div>
-            <h1 style="margin:0;">Available Hotel Rooms</h1>
-            <small style="color:#64748b;">Sorted automatically by availability</small>
+    <header>
+        <h1 style="margin:0;">Снятие комнат в Отеле</h1>
+        <div class="header-user-menu" style="">
+            <span>Добро пожаловать, <b id="user-display">...</b></span>
+            <a href="/admin/"><button id="admin-btn" style="display:none">Панель админа</button></a>
+            <button class="logout-button" onclick="logout()">Выйти</button>
         </div>
-        <div style="display:flex; align-items:center; gap:10px;">
-            <span>Welcome, <b id="user-display">...</b></span>
-            <a id="admin-btn" href="/admin/" style="display:none; padding:8px 12px; background:#475569; color:white; border-radius:6px; text-decoration:none; font-size:0.85rem;">Admin Panel</a>
-            <button onclick="logout()" style="padding:8px 12px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer;">Log Out</button>
-        </div>
-    </div>
+    </header>
+    <hr>
 
-    <!-- FILTER PANEL -->
-    <div class="filter-panel">
+    <section class="filter-panel">
         <div class="filter-grid">
             <div class="filter-group">
-                <label>Check-In Date & Time</label>
-                <input type="datetime-local" id="f_in" onchange="renderRooms()" />
+                <label>Дата въезда</label>
+                <input type="datetime-local" id="f_in" required onchange="renderRooms()" />
             </div>
             <div class="filter-group">
-                <label>Check-Out Date & Time</label>
-                <input type="datetime-local" id="f_out" onchange="renderRooms()" />
+                <label>Дата выезда</label>
+                <input type="datetime-local" id="f_out" required onchange="renderRooms()" />
             </div>
             <div class="filter-group">
-                <label>Min Sleeping Places</label>
-                <select id="f_beds" onchange="renderRooms()">
-                    <option value="0">Any</option>
-                    <option value="1">1+ Beds</option>
-                    <option value="2">2+ Beds</option>
-                    <option value="3">3+ Beds</option>
-                    <option value="4">4+ Beds</option>
+                <label>Спальные места</label>
+                <select id="f_beds" required onchange="renderRooms()">
+                    <option value="0">Любое количество</option>
+                    <option value="1">1+</option>
+                    <option value="2">2+</option>
+                    <option value="3">3+</option>
+                    <option value="4">4+</option>
                 </select>
             </div>
             <div class="filter-group">
-                <label>Max Price ($ / night)</label>
-                <input type="number" id="f_price" placeholder="No limit" oninput="renderRooms()" />
+                <label>Цена за ночь</label>
+                <input type="number" id="f_price" placeholder="Любая" min="0" oninput="renderRooms()" />
             </div>
             <div class="filter-group">
-                <label>Search Type / View / Info</label>
-                <input type="text" id="f_search" placeholder="e.g. Jacuzzi, Ocean..." oninput="renderRooms()" />
+                <label>Доп. критерии</label>
+                <input type="text" id="f_search" placeholder="Номер этажа / Вид..." oninput="renderRooms()" />
             </div>
             <div class="filter-group">
-                <label>Secondary Sort</label>
+                <label>Сортировать по</label>
                 <select id="f_sort" onchange="renderRooms()">
-                    <option value="price_asc">Price: Low to High</option>
-                    <option value="price_desc">Price: High to Low</option>
-                    <option value="area_desc">Area: Largest First</option>
-                    <option value="room_asc">Room Number</option>
+                    <option value="price_asc">Цена: по-возростанию</option>
+                    <option value="price_desc">Цена: по-убыванию</option>
+                    <option value="area_desc">Наибольшая площадь</option>
+                    <option value="room_asc">Номер комнаты</option>
                 </select>
             </div>
         </div>
@@ -65,23 +62,22 @@
             <div style="display:flex; gap:18px; flex-wrap:wrap;">
                 <label class="checkbox-label">
                     <input type="checkbox" id="f_pets" onchange="renderRooms()" />
-                    Pets Allowed Only 🐾
+                    <p>Можно с питомцами</p>
                 </label>
                 <label class="checkbox-label">
                     <input type="checkbox" id="f_avail_only" onchange="renderRooms()" />
-                    Hide Unavailable Rooms
+                    <p>Скрыть недоступные</p>
                 </label>
             </div>
-            <button onclick="resetFilters()" style="padding:6px 12px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-size:0.85rem;">
-                Reset Filters
+            <button onclick="resetFilters()">
+                Сбросить фильтр
             </button>
         </div>
-    </div>
+    </section>
 
-    <!-- ROOM CARDS CONTAINER -->
-    <div id="rooms-container" class="rooms-container">
-        Loading rooms...
-    </div>
+    <section id="rooms-container" class="rooms-container">
+        <p>Loading rooms...</p>
+    </section>
 
     <script src="../js/common.js"></script>
     <script src="/guest/scripts/index.js"></script>

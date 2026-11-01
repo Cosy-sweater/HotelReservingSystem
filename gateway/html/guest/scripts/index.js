@@ -2,11 +2,47 @@ let allRooms = [];
 
 // Set default filter timeframe: Now -> Tomorrow
 function setDefaultDates() {
+
+    const toLocalISO = (date) => {
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 16);
+    };
+
     const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    const tomorrow = new Date(now.getTime() + 86400000);
-    document.getElementById("f_in").value = now.toISOString().slice(0, 16);
-    document.getElementById("f_out").value = tomorrow.toISOString().slice(0, 16);
+    const tomorrow = new Date(now.getTime() + 86400000); // Default check-out: +1 day
+
+    const maxDate = new Date(now);
+    maxDate.setFullYear(maxDate.getFullYear() + 1);
+
+    const minStr = toLocalISO(now);
+    const tomorrowStr = toLocalISO(tomorrow);
+    const maxStr = toLocalISO(maxDate);
+
+    const inInput = document.getElementById("f_in") || document.getElementById("check_in") || document.getElementById("book_in");
+    const outInput = document.getElementById("f_out") || document.getElementById("check_out") || document.getElementById("book_out");
+
+    if (!inInput || !outInput) return;
+
+    inInput.min = minStr;
+    inInput.max = maxStr;
+
+    outInput.min = minStr;
+    outInput.max = maxStr;
+
+    inInput.value = minStr;
+    outInput.value = tomorrowStr;
+
+    const enforceBounds = () => {
+        if (inInput.value < minStr) inInput.value = minStr;
+        if (inInput.value > maxStr) inInput.value = maxStr;
+
+        outInput.min = inInput.value || minStr;
+        if (outInput.value < outInput.min) outInput.value = outInput.min;
+        if (outInput.value > maxStr) outInput.value = maxStr;
+    };
+
+    inInput.addEventListener("change", enforceBounds);
+    outInput.addEventListener("change", enforceBounds);
 }
 
 async function init() {
@@ -22,7 +58,6 @@ async function init() {
     }
 
     await fetchRooms(false);
-    setInterval(() => fetchRooms(true), 4000);
 }
 
 async function fetchRooms(quick = false) {
@@ -36,31 +71,24 @@ async function fetchRooms(quick = false) {
         allRooms = await res.json();
         renderRooms();
     } catch (err) {
-        console.warn("Temporary network error:", err);
+        console.warn("Room fetching error:", err);
     }
 }
 
-/**
- * Determines a room's availability rank for the selected Check-In / Check-Out filter dates:
- *   0 = Available (sorted to top)
- *   1 = Temporarily Held in Redis (sorted to middle)
- *   2 = Booked in DB for those dates (sorted to bottom)
- */
+
 function getAvailabilityState(room, filterIn, filterOut) {
     const reqIn = filterIn ? new Date(filterIn) : new Date();
     const reqOut = filterOut ? new Date(filterOut) : new Date(reqIn.getTime() + 86400000);
 
-    // Check overlapping DB reservations
     const overlappingRes = (room.reservations || []).find(res => {
         const rIn = new Date(res.check_in);
         const rOut = new Date(res.check_out);
         return rIn < reqOut && rOut > reqIn;
     });
     if (overlappingRes || (!filterIn && room.is_booked)) {
-        return {rank: 2, label: "Booked", css: "status-booked"};
+        return {rank: 2, label: "Забронировано", css: "status-booked"};
     }
 
-    // Check overlapping Redis holds
     const overlappingHold = (room.holds || []).find(hold => {
         const hIn = new Date(hold.check_in);
         const hOut = new Date(hold.check_out);
@@ -74,7 +102,7 @@ function getAvailabilityState(room, filterIn, filterOut) {
         };
     }
 
-    return {rank: 0, label: "Available", css: "status-available"};
+    return {rank: 0, label: "Свободно", css: "status-available"};
 }
 
 function renderRooms() {
@@ -87,7 +115,6 @@ function renderRooms() {
     const availOnly = document.getElementById("f_avail_only").checked;
     const sortMode = document.getElementById("f_sort").value;
 
-    // 1. Decorate with availability state & filter
     const filtered = allRooms
         .map(r => ({
             ...r,
@@ -111,7 +138,6 @@ function renderRooms() {
             return true;
         });
 
-    // 2. Sort: Primary sort is ALWAYS Availability Rank (0 -> 1 -> 2)
     filtered.sort((a, b) => {
         if (a._avail.rank !== b._avail.rank) {
             return a._avail.rank - b._avail.rank;
@@ -124,7 +150,7 @@ function renderRooms() {
 
     const container = document.getElementById("rooms-container");
     if (filtered.length === 0) {
-        container.innerHTML = `<div style="text-align:center; padding:2rem; color:#64748b; background:#fff; border-radius:10px;">No rooms match your current filters.</div>`;
+        container.innerHTML = `<p class="label-no-rooms">Не найдены комнаты по заданным критериями.</p>`;
         return;
     }
 
@@ -138,33 +164,35 @@ function renderRooms() {
             : `<span style="font-size:0.8rem; color:#94a3b8;">No extra amenities listed</span>`;
 
         return `
-                    <div class="room-card ${isAvailable ? '' : 'unavailable'}">
-                        <div style="flex:1;">
-                            <div class="room-header">
-                                <h3 class="room-title">Room #${r.room_number} — ${r.room_type}</h3>
-                                <span class="area-badge">${r.area_sqm} m²</span>
-                                <span class="status-badge ${r._avail.css}">${r._avail.label}</span>
+                    <a href="/room?id=${r.room_number}&${queryDates}">
+                        <div class="room-card ${isAvailable ? '' : 'unavailable'}">
+                            <div style="flex:1;">
+                                <div class="room-header">
+                                    <h3 class="room-title">Комната #${r.room_number} — ${r.room_type}</h3>
+                                    <span class="area-badge">${r.area_sqm} м²</span>
+                                    <span class="status-badge ${r._avail.css}">${r._avail.label}</span>
+                                </div>
+    
+                                <div class="room-specs">
+                                    <span>Спальные места: <b>${r.sleeping_places}</b></span>
+                                    <span>Этаж <b>${r.floor}</b></span>
+                                    ${r.window_view ? `<span>Вид: ${r.window_view}</span>` : ''}
+                                    <span>${r.pets_allowed ? 'Можно с питомцами' : 'Без питомцев'}</span>
+                                </div>
+    
+                                <div class="tags-row">
+                                    ${infoList}
+                                </div>
                             </div>
-
-                            <div class="room-specs">
-                                <span>🛏️ <b>${r.sleeping_places}</b> Sleeping Place${r.sleeping_places > 1 ? 's' : ''}</span>
-                                <span>🏢 Floor <b>${r.floor}</b></span>
-                                ${r.window_view ? `<span>🪟 ${r.window_view}</span>` : ''}
-                                <span>${r.pets_allowed ? '🐾 Pets Allowed' : '🚫 No Pets'}</span>
-                            </div>
-
-                            <div class="tags-row">
-                                ${infoList}
+    
+                            <div class="room-action">
+                                <div class="price-box">$${r.price} <span>/ ночь</span></div>
+                                <span class="rent-btn ${isAvailable ? '' : 'secondary'}" href="/room?id=${r.room_number}&${queryDates}">
+                                    ${isAvailable ? 'Снять комнату &rarr;' : 'Посмотреть доступные даты &rarr;'}
+                                </span>
                             </div>
                         </div>
-
-                        <div class="room-action">
-                            <div class="price-box">$${r.price} <span>/ night</span></div>
-                            <a class="rent-btn ${isAvailable ? '' : 'secondary'}" href="/room?id=${r.room_number}&${queryDates}">
-                                ${isAvailable ? 'Rent Room &rarr;' : 'View Schedule &rarr;'}
-                            </a>
-                        </div>
-                    </div>
+                    </a>
                 `;
     }).join("");
 }
@@ -178,7 +206,6 @@ function resetFilters() {
     setDefaultDates();
     document.getElementById("f_beds").value = "0";
     document.getElementById("f_price").value = "";
-    document.getElementById("f_search").value = "";
     document.getElementById("f_pets").checked = false;
     document.getElementById("f_avail_only").checked = false;
     document.getElementById("f_sort").value = "price_asc";
