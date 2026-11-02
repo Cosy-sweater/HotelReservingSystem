@@ -1,20 +1,4 @@
 /* Global */
-body {
-    font-family: system-ui, -apple-system, sans-serif;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 1.5rem;
-    background: #d3d3d3;
-    color: #1e293b;
-}
-
-button {
-    padding: .5rem .8rem;
-    border-radius: .75rem;
-    border: solid 1px black;
-    cursor: pointer;
-}
-
 input, select {
     min-height: 2.5rem;
 }

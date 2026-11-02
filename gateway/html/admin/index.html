@@ -1,500 +1,243 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8">
     <title>Admin Dashboard - Hotel Management</title>
-    <link rel="stylesheet" href="/css/global.css">
-    <style>
-        body { font-family: system-ui, -apple-system, sans-serif; max-width: 1150px; margin: 1.5rem auto; background: #f1f5f9; padding: 20px; color: #1e293b; }
-        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-
-        /* Navigation Tabs */
-        .tabs-nav { display: flex; gap: 8px; margin-bottom: 1.25rem; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; flex-wrap: wrap; }
-        .tab-btn { background: #e2e8f0; color: #334155; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.15s; }
-        .tab-btn.active { background: #2563eb; color: #ffffff; }
-        .tab-pane { display: none; }
-        .tab-pane.active { display: block; }
-
-        .card { background: #ffffff; padding: 20px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 20px; }
-        input, select { padding: 8px 10px; margin: 4px 0; width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; appearance: none; }
-        button { padding: 9px 15px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; flex-shrink: 0; }
-        button:hover { background: #1d4ed8; }
-        .btn-csv { background: #0f766e; }
-        .btn-csv:hover { background: #115e59; }
-        .btn-danger { background: #dc2626; }
-        .btn-danger:hover { background: #b91c1c; }
-
-        table { width: 100%; border-collapse: collapse; background: white; margin-top: 10px; }
-        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 0.9rem; }
-        th { background: #f8fafc; font-weight: 700; }
-        tr.clickable-row { cursor: pointer; }
-        tr.clickable-row:hover { background: #eff6ff; }
-
-        .badge { padding: 3px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; display: inline-block; }
-        .badge-paid { background: #dcfce7; color: #15803d; }
-        .badge-pending { background: #fef3c7; color: #b45309; }
-    </style>
-</head>
-<body>
-
+    <link href="../css/fonts.css" rel="stylesheet">
+    <link href="../css/global.css" rel="stylesheet">
+    <link href="/admin/styles/index.css" rel="stylesheet">
+  </head>
+  <body>
     <div class="top-bar">
-        <div>
-            <h1 style="margin:0;">Hotel Admin Control Center</h1>
-            <small style="color:#64748b;">Multi-Container Management & CSV Data Suite</small>
-        </div>
-        <div style="display:flex; gap:10px;">
-            <a href="/" style="padding:9px 14px; background:#475569; color:white; border-radius:6px; text-decoration:none; font-weight:600;">Guest View</a>
-            <button class="btn-danger" onclick="logout()">Log Out</button>
-        </div>
+      <div>
+        <h1 style="margin:0;">Hotel Admin Control Center</h1>
+        <small style="color:#64748b;">Multi-Container Management & CSV Data
+          Suite</small>
+      </div>
+      <div class="top-bar-buttons">
+        <a href="/">
+          <button class="btn-wheat-clr">
+            Guest View
+          </button>
+        </a>
+        <button class="btn-danger" onclick="logout()">Log Out</button>
+      </div>
     </div>
 
-    <!-- TABS NAVIGATION -->
     <div class="tabs-nav">
-        <button class="tab-btn active" onclick="switchTab('tab-rooms', this)">1. Edit Rooms & CSV Mass Sync</button>
-        <button class="tab-btn" onclick="switchTab('tab-schedule', this)">2. Renting Dates & Availability</button>
-        <button class="tab-btn" onclick="switchTab('tab-payments', this)">3. Payment Transactions</button>
-        <button class="tab-btn" onclick="switchTab('tab-users', this)">4. Registered Users</button>
+      <button class="tab-btn active" onclick="switchTab('tab-rooms', this)">1.
+        Edit Rooms & CSV Mass Sync
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-schedule', this)">2.
+        Renting Dates & Availability
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-payments', this)">3.
+        Payment Transactions
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-users', this)">4.
+        Registered Users
+      </button>
     </div>
 
     <!-- ==================== TAB 1: EDIT ROOMS & CSV ==================== -->
     <div id="tab-rooms" class="tab-pane active">
-        <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-            <div>
-                <h3 style="margin:0;">Mass Edit Rooms via CSV</h3>
-                <small style="color:#64748b;">Export all rooms to CSV, edit in Excel/Sheets, and import back to update in bulk.</small>
-            </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <button class="btn-csv" onclick="window.location.href='/api/admin/export/rooms'">⬇ Export Rooms CSV</button>
-                <input type="file" id="csv_file" accept=".csv" style="width:210px; margin:0;" />
-                <button class="btn-csv" onclick="importRoomsCSV()">⬆ Import Rooms CSV</button>
-            </div>
+      <div class="card"
+           style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h3 style="margin:0;">Mass Edit Rooms via CSV</h3>
+          <small style="color:#64748b;">Export all rooms to CSV, edit in
+            Excel/Sheets, and import back to update in bulk.</small>
         </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-csv"
+                  onclick="window.location.href='/api/admin/export/rooms'">⬇
+            Export Rooms CSV
+          </button>
+          <input type="file" id="csv_file" accept=".csv"
+                 style="width:210px; margin:0;"/>
+          <button class="btn-csv" onclick="importRoomsCSV()">⬆ Import Rooms
+            CSV
+          </button>
+        </div>
+      </div>
 
-        <div class="card">
-            <h3 style="margin-top:0;">Edit Selected Room / Create New <small style="font-weight:normal; color:#64748b;">(Click any row below to populate)</small></h3>
-            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                <div><label>Room Number *</label><input id="r_num" type="number" placeholder="103" /></div>
-                <div><label>Floor *</label><input id="r_floor" type="number" value="1" /></div>
-                <div><label>Room Type *</label><input id="r_type" placeholder="Deluxe Double" /></div>
-                <div><label>Sleeping Places *</label><input id="r_beds" type="number" value="2" /></div>
-                <div><label>Area (sqm) *</label><input id="r_area" type="number" step="0.1" value="25.0" /></div>
-                <div><label>Price ($/night) *</label><input id="r_price" type="number" value="120" /></div>
-                <div><label>Pets Allowed?</label><select id="r_pets"><option value="false">No</option><option value="true">Yes</option></select></div>
-                <div><label>Window View (Nullable)</label><input id="r_view" placeholder="Leave blank for NULL" /></div>
-                <div><label>Additional Info (comma-sep, Nullable)</label><input id="r_info" placeholder="Wi-Fi, Jacuzzi" /></div>
-            </div>
-            <button onclick="saveRoom()" style="margin-top: 12px;">Save / Update Room</button>
+      <div class="card">
+        <h3 style="margin-top:0;">Edit Selected Room / Create New <small
+            style="font-weight:normal; color:#64748b;">(Click any row below to
+          populate)</small></h3>
+        <div
+            style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+          <div><label>Room Number *</label><input id="r_num" type="number"
+                                                  placeholder="103"/></div>
+          <div><label>Floor *</label><input id="r_floor" type="number"
+                                            value="1"/></div>
+          <div><label>Room Type *</label><input id="r_type"
+                                                placeholder="Deluxe Double"/>
+          </div>
+          <div><label>Sleeping Places *</label><input id="r_beds" type="number"
+                                                      value="2"/></div>
+          <div><label>Area (sqm) *</label><input id="r_area" type="number"
+                                                 step="0.1" value="25.0"/></div>
+          <div><label>Price ($/night) *</label><input id="r_price" type="number"
+                                                      value="120"/></div>
+          <div><label>Pets Allowed?</label><select id="r_pets">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select></div>
+          <div><label>Window View (Nullable)</label><input id="r_view"
+                                                           placeholder="Leave blank for NULL"/>
+          </div>
+          <div><label>Additional Info (comma-sep, Nullable)</label><input
+              id="r_info" placeholder="Wi-Fi, Jacuzzi"/></div>
         </div>
+        <button class="btn-wheat-clr" onclick="saveRoom()"
+                style="margin-top: 12px;">Save / Update Room
+        </button>
+      </div>
 
-        <div class="card">
-            <h3 style="margin-top:0;">Room Inventory (Click a row to load into editor)</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Room</th>
-                        <th>Type & Floor</th>
-                        <th>Specs</th>
-                        <th>Pets & Extra Info</th>
-                        <th>Price</th>
-                        <th>Availability Status</th>
-                    </tr>
-                </thead>
-                <tbody id="rooms-edit-table"></tbody>
-            </table>
-        </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Room Inventory (Click a row to load into
+          editor)</h3>
+        <table>
+          <thead>
+          <tr>
+            <th>Room</th>
+            <th>Type & Floor</th>
+            <th>Specs</th>
+            <th>Pets & Extra Info</th>
+            <th>Price</th>
+            <th>Availability Status</th>
+          </tr>
+          </thead>
+          <tbody id="rooms-edit-table"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ==================== TAB 2: RENTING DATES & STATES ==================== -->
     <div id="tab-schedule" class="tab-pane">
-        <div class="card">
-            <h3 style="margin-top:0;">Manual Reservation by Staff</h3>
-            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-                <div><label>Room Number *</label><input id="book_room_num" type="number" placeholder="101" /></div>
-                <div><label>Username *</label><input id="book_username" placeholder="alice or new_guest" /></div>
-                <div><label>Check-In *</label><input id="book_in" type="datetime-local" /></div>
-                <div><label>Check-Out *</label><input id="book_out" type="datetime-local" /></div>
-            </div>
-
-            <div id="new-user-fields" style="display:none; margin-top:12px; padding:12px; background:#fffbeb; border:1px solid #f59e0b; border-radius:6px;">
-                <strong style="color:#b45309;">User not found! Fill details below to register & book:</strong>
-                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top:8px;">
-                    <div><label>Password</label><input id="book_pass" type="password" value="guest123" /></div>
-                    <div><label>Passport Number</label><input id="book_passport" placeholder="AA1234567" /></div>
-                    <div><label>Phone</label><input id="book_phone" placeholder="+370 600 00000" /></div>
-                </div>
-            </div>
-
-            <button onclick="manualBook(false)" style="margin-top: 12px;">Book Room</button>
-            <button id="confirm-create-btn" onclick="manualBook(true)" style="display:none; margin-top: 12px; background:#d97706;">Create User & Complete Booking</button>
+      <div class="card">
+        <h3 style="margin-top:0;">Manual Reservation by Staff</h3>
+        <div
+            style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+          <div><label>Room Number *</label><input id="book_room_num"
+                                                  type="number"
+                                                  placeholder="101"/></div>
+          <div><label>Username *</label><input id="book_username"
+                                               placeholder="alice or new_guest"/>
+          </div>
+          <div><label>Check-In *</label><input id="book_in"
+                                               type="datetime-local"/></div>
+          <div><label>Check-Out *</label><input id="book_out"
+                                                type="datetime-local"/></div>
         </div>
 
-        <div class="card">
-            <h3 style="margin-top:0;">Room Renting Schedule, Payment States & Earliest Free Time</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Room</th>
-                        <th>Earliest Free From</th>
-                        <th>Renting Dates & Payment State (Paid vs Pending Hold)</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="schedule-table"></tbody>
-            </table>
+        <div id="new-user-fields"
+             style="display:none; margin-top:12px; padding:12px; background:#fffbeb; border:1px solid #f59e0b; border-radius:6px;">
+          <strong style="color:#b45309;">User not found! Fill details below to
+            register & book:</strong>
+          <div
+              style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top:8px;">
+            <div><label>Password</label><input id="book_pass" type="password"
+                                               value="guest123"/></div>
+            <div><label>Passport Number</label><input id="book_passport"
+                                                      placeholder="AA1234567"/>
+            </div>
+            <div><label>Phone</label><input id="book_phone"
+                                            placeholder="+370 600 00000"/></div>
+          </div>
         </div>
+
+        <button class="btn-wheat-clr" onclick="manualBook(false)">Book Room
+        </button>
+        <button id="confirm-create-btn" onclick="manualBook(true)"
+                style="display:none; margin-top: 12px; background:#d97706;">
+          Create User & Complete Booking
+        </button>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Room Renting Schedule, Payment States &
+          Earliest Free Time</h3>
+        <table>
+          <thead>
+          <tr>
+            <th>Room</th>
+            <th>Earliest Free From</th>
+            <th>Renting Dates & Payment State (Paid vs Pending Hold)</th>
+            <th>Actions</th>
+          </tr>
+          </thead>
+          <tbody id="schedule-table"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ==================== TAB 3: PAYMENTS & CSV EXPORT ==================== -->
     <div id="tab-payments" class="tab-pane">
-        <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0;">Payment Service Transactions</h3>
-                <button class="btn-csv" onclick="window.location.href='/api/admin/export/payments'">⬇ Export Payments CSV</button>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Transaction ID</th>
-                        <th>User</th>
-                        <th>Room</th>
-                        <th>Amount</th>
-                        <th>Provider & Card</th>
-                        <th>Status</th>
-                        <th>Timestamp</th>
-                    </tr>
-                </thead>
-                <tbody id="payments-table"></tbody>
-            </table>
+      <div class="card">
+        <div
+            style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">Payment Service Transactions</h3>
+          <button class="btn-csv"
+                  onclick="window.location.href='/api/admin/export/payments'">⬇
+            Export Payments CSV
+          </button>
         </div>
+        <table>
+          <thead>
+          <tr>
+            <th>Transaction ID</th>
+            <th>User</th>
+            <th>Room</th>
+            <th>Amount</th>
+            <th>Provider & Card</th>
+            <th>Status</th>
+            <th>Timestamp</th>
+          </tr>
+          </thead>
+          <tbody id="payments-table"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ==================== TAB 4: USERS & CSV EXPORT/IMPORT ==================== -->
     <div id="tab-users" class="tab-pane">
-        <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                <div>
-                    <h3 style="margin:0;">Registered Users & Rented Rooms</h3>
-                    <small style="color:#64748b;">Export users to CSV, edit roles/passport/phone (or add new rows), and import back.</small>
-                </div>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <button class="btn-csv" onclick="window.location.href='/api/admin/export/users'">⬇ Export Users CSV</button>
-                    <input type="file" id="users_csv_file" accept=".csv" style="width:210px; margin:0;" />
-                    <button class="btn-csv" onclick="importUsersCSV()">⬆ Import Users CSV</button>
-                </div>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID / Username</th>
-                        <th>Role</th>
-                        <th>Passport Number</th>
-                        <th>Phone</th>
-                        <th>Active / Upcoming Rented Rooms</th>
-                    </tr>
-                </thead>
-                <tbody id="users-table"></tbody>
-            </table>
+      <div class="card">
+        <div
+            style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h3 style="margin:0;">Registered Users & Rented Rooms</h3>
+            <small style="color:#64748b;">Export users to CSV, edit
+              roles/passport/phone (or add new rows), and import back.</small>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn-csv"
+                    onclick="window.location.href='/api/admin/export/users'">⬇
+              Export Users CSV
+            </button>
+            <input type="file" id="users_csv_file" accept=".csv"
+                   style="width:210px; margin:0;"/>
+            <button class="btn-csv" onclick="importUsersCSV()">⬆ Import Users
+              CSV
+            </button>
+          </div>
         </div>
+        <table>
+          <thead>
+          <tr>
+            <th>ID / Username</th>
+            <th>Role</th>
+            <th>Passport Number</th>
+            <th>Phone</th>
+            <th>Active / Upcoming Rented Rooms</th>
+          </tr>
+          </thead>
+          <tbody id="users-table"></tbody>
+        </table>
+      </div>
     </div>
 
-    <script>
-        let cachedRooms = [];
-
-        const toLocalISO = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-
-        function switchTab(tabId, btn) {
-            document.querySelectorAll(".tab-pane").forEach(el => el.classList.remove("active"));
-            document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
-            document.getElementById(tabId).classList.add("active");
-            btn.classList.add("active");
-
-            if (tabId === "tab-payments") loadPayments();
-            if (tabId === "tab-users") loadUsers();
-        }
-
-        function setDefaultBookingDates() {
-            const now = new Date();
-            const tomorrow = new Date(now.getTime() + 86400000);
-            const maxDate = new Date(now);
-            maxDate.setFullYear(maxDate.getFullYear() + 1);
-
-            const minStr = toLocalISO(now);
-            const maxStr = toLocalISO(maxDate);
-
-            const inEl = document.getElementById("book_in");
-            const outEl = document.getElementById("book_out");
-            inEl.min = minStr;
-            inEl.max = maxStr;
-            outEl.min = minStr;
-            outEl.max = maxStr;
-            inEl.value = minStr;
-            outEl.value = toLocalISO(tomorrow);
-
-            const enforce = () => {
-                if (inEl.value < minStr) inEl.value = minStr;
-                if (inEl.value > maxStr) inEl.value = maxStr;
-                outEl.min = inEl.value;
-                if (outEl.value <= inEl.value) {
-                    const nextDay = new Date(new Date(inEl.value).getTime() + 86400000);
-                    outEl.value = toLocalISO(nextDay);
-                }
-                if (outEl.value > maxStr) outEl.value = maxStr;
-            };
-            inEl.onchange = enforce;
-            outEl.onchange = enforce;
-        }
-
-        async function loadAdminRooms(quick = false) {
-            try {
-                const res = await fetch(`/api/rooms${quick ? '?quick=true' : ''}`);
-                if (res.status === 401) { window.location.href = "/login"; return; }
-                if (!res.ok) return;
-                cachedRooms = await res.json();
-
-                // Render Tab 1: Room Editor Table
-                document.getElementById("rooms-edit-table").innerHTML = cachedRooms.map(r => `
-                    <tr class="clickable-row" onclick="populateRoomForm(${r.room_number})">
-                        <td><b>#${r.room_number}</b></td>
-                        <td>${r.room_type}<br><small>Floor ${r.floor}</small></td>
-                        <td>${r.sleeping_places} Beds | ${r.area_sqm} m²<br><small>View: ${r.window_view ?? '<i>None</i>'}</small></td>
-                        <td>Pets: ${r.pets_allowed ? 'Yes' : 'No'}<br><small>${r.additional_info ? r.additional_info.join(', ') : '<i>None</i>'}</small></td>
-                        <td>$${r.price}</td>
-                        <td>
-                            ${r.free_from
-                                ? `<b style="color:#b45309;">Free after: ${r.free_from.replace('T', ' ')}</b>`
-                                : `<span style="color:#15803d; font-weight:600;">Available Now</span>`
-                            }
-                        </td>
-                    </tr>
-                `).join("");
-
-                // Render Tab 2: Renting Dates & States (Paid vs Pending Payment)
-                document.getElementById("schedule-table").innerHTML = cachedRooms.map(r => {
-                    const paidRows = (r.reservations || []).map(b => `
-                        <div style="margin-bottom:6px;">
-                            <span class="badge badge-paid">PAID (${b.status.toUpperCase()})</span>
-                            <b>${b.username}</b>: ${b.check_in.slice(0,16).replace('T',' ')} &rarr; ${b.check_out.slice(0,16).replace('T',' ')}
-                        </div>
-                    `);
-
-                    const pendingRows = (r.holds || []).map(h => `
-                        <div style="margin-bottom:6px;">
-                            <span class="badge badge-pending">PENDING PAYMENT (${h.ttl}s left)</span>
-                            <b>${h.username}</b>: ${h.check_in.slice(0,16).replace('T',' ')} &rarr; ${h.check_out.slice(0,16).replace('T',' ')}
-                        </div>
-                    `);
-
-                    const allEntries = [...paidRows, ...pendingRows].join("");
-
-                    return `
-                        <tr>
-                            <td><b>Room #${r.room_number}</b><br><small>${r.room_type}</small></td>
-                            <td>
-                                ${r.free_from
-                                    ? `<b style="color:#b45309;">Free after: ${r.free_from.replace('T', ' ')}</b>`
-                                    : `<span style="color:#15803d; font-weight:600;">Available Now</span>`
-                                }
-                            </td>
-                            <td>${allEntries || '<span style="color:#15803d;">Completely Free</span>'}</td>
-                            <td>
-                                ${(paidRows.length || pendingRows.length)
-                                    ? `<button class="btn-danger" onclick="cancelReservation(${r.room_number})" style="padding:6px 10px; font-size:0.8rem;">Cancel All</button>`
-                                    : `<button onclick="selectRoomForBooking(${r.room_number})" style="padding:6px 10px; font-size:0.8rem;">Book</button>`
-                                }
-                            </td>
-                        </tr>
-                    `;
-                }).join("");
-            } catch (e) {
-                console.warn("Network glitch:", e);
-            }
-        }
-
-        function populateRoomForm(roomNumber) {
-            const r = cachedRooms.find(item => item.room_number === roomNumber);
-            if (!r) return;
-            document.getElementById("r_num").value = r.room_number;
-            document.getElementById("r_floor").value = r.floor;
-            document.getElementById("r_type").value = r.room_type;
-            document.getElementById("r_beds").value = r.sleeping_places;
-            document.getElementById("r_area").value = r.area_sqm;
-            document.getElementById("r_price").value = r.price;
-            document.getElementById("r_pets").value = r.pets_allowed ? "true" : "false";
-            document.getElementById("r_view").value = r.window_view ?? "";
-            document.getElementById("r_info").value = r.additional_info ? r.additional_info.join(", ") : "";
-            document.getElementById("book_room_num").value = r.room_number;
-        }
-
-        function selectRoomForBooking(roomNumber) {
-            const r = cachedRooms.find(item => item.room_number === roomNumber);
-            document.getElementById("book_room_num").value = roomNumber;
-            const inEl = document.getElementById("book_in");
-            const outEl = document.getElementById("book_out");
-
-            const startISO = (r && r.free_from) ? r.free_from : toLocalISO(new Date());
-            inEl.value = startISO;
-            const nextDay = new Date(new Date(startISO).getTime() + 86400000);
-            outEl.min = startISO;
-            outEl.value = toLocalISO(nextDay);
-
-            window.scrollTo({ top: 0, behavior: "smooth" });
-        }
-
-        async function importRoomsCSV() {
-            const fileInput = document.getElementById("csv_file");
-            if (!fileInput.files.length) {
-                alert("Please select a Rooms CSV file first.");
-                return;
-            }
-            const formData = new FormData();
-            formData.append("file", fileInput.files[0]);
-
-            const res = await fetch("/api/admin/import/rooms", {
-                method: "POST",
-                body: formData
-            });
-            const data = await res.json();
-            alert(data.message || data.error);
-            fileInput.value = "";
-            loadAdminRooms(false);
-        }
-
-        async function importUsersCSV() {
-            const fileInput = document.getElementById("users_csv_file");
-            if (!fileInput.files.length) {
-                alert("Please select a Users CSV file first.");
-                return;
-            }
-            const formData = new FormData();
-            formData.append("file", fileInput.files[0]);
-
-            const res = await fetch("/api/admin/import/users", {
-                method: "POST",
-                body: formData
-            });
-            const data = await res.json();
-            alert(data.message || data.error);
-            fileInput.value = "";
-            loadUsers();
-        }
-
-        async function loadPayments() {
-            const res = await fetch("/api/admin/payments");
-            if (!res.ok) return;
-            const payments = await res.json();
-            document.getElementById("payments-table").innerHTML = payments.length
-                ? payments.map(p => `
-                    <tr>
-                        <td><code>${p.transaction_id}</code></td>
-                        <td><b>${p.username}</b></td>
-                        <td>#${p.room_number}</td>
-                        <td><b>$${p.amount.toFixed(2)}</b> ${p.currency}</td>
-                        <td>${p.provider} (•••• ${p.card_last4})</td>
-                        <td><span class="badge badge-paid">${p.status.toUpperCase()}</span></td>
-                        <td>${p.paid_at.slice(0,19).replace('T',' ')}</td>
-                    </tr>
-                `).join("")
-                : `<tr><td colspan="7" style="text-align:center;">No payment records yet.</td></tr>`;
-        }
-
-        async function loadUsers() {
-            const res = await fetch("/api/users");
-            if (!res.ok) return;
-            const users = await res.json();
-            document.getElementById("users-table").innerHTML = users.map(u => `
-                <tr>
-                    <td><b>#${u.id} — ${u.username}</b></td>
-                    <td>${u.role}</td>
-                    <td>${u.passport_number || '<i>Not set</i>'}</td>
-                    <td>${u.phone || '<i>Not set</i>'}</td>
-                    <td>
-                        ${(u.rented_rooms || []).length
-                            ? u.rented_rooms.map(rr => `Room #${rr.room_number} (${rr.status}: ${String(rr.check_in).slice(0,16).replace('T',' ')} &rarr; ${String(rr.check_out).slice(0,16).replace('T',' ')})`).join('<br>')
-                            : '<i>None</i>'
-                        }
-                    </td>
-                </tr>
-            `).join("");
-        }
-
-        async function saveRoom() {
-            const viewVal = document.getElementById("r_view").value.trim();
-            const infoRaw = document.getElementById("r_info").value.split(",").map(s => s.trim()).filter(Boolean);
-
-            const payload = {
-                room_number: parseInt(document.getElementById("r_num").value),
-                floor: parseInt(document.getElementById("r_floor").value),
-                room_type: document.getElementById("r_type").value.trim(),
-                sleeping_places: parseInt(document.getElementById("r_beds").value),
-                area_sqm: parseFloat(document.getElementById("r_area").value),
-                price: parseInt(document.getElementById("r_price").value),
-                pets_allowed: document.getElementById("r_pets").value === "true",
-                window_view: viewVal.length > 0 ? viewVal : null,
-                additional_info: infoRaw.length > 0 ? infoRaw : null
-            };
-
-            const res = await fetch("/api/admin/rooms", {
-                method: "POST", headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            alert(data.message || data.error);
-            loadAdminRooms(false);
-        }
-
-        async function manualBook(createNewUser = false) {
-            const payload = {
-                room_number: parseInt(document.getElementById("book_room_num").value),
-                username: document.getElementById("book_username").value.trim(),
-                check_in: document.getElementById("book_in").value,
-                check_out: document.getElementById("book_out").value,
-                create_new_user: createNewUser,
-                password: document.getElementById("book_pass").value,
-                passport_number: document.getElementById("book_passport").value.trim() || null,
-                phone: document.getElementById("book_phone").value.trim() || null
-            };
-
-            const res = await fetch("/api/admin/book", {
-                method: "POST", headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-
-            if (res.status === 404 && data.code === "USER_NOT_FOUND") {
-                document.getElementById("new-user-fields").style.display = "block";
-                document.getElementById("confirm-create-btn").style.display = "inline-block";
-                return;
-            }
-            if (!res.ok) {
-                alert(data.error);
-                return;
-            }
-
-            alert(data.message);
-            document.getElementById("new-user-fields").style.display = "none";
-            document.getElementById("confirm-create-btn").style.display = "none";
-            loadAdminRooms(false);
-        }
-
-        async function cancelReservation(roomNum) {
-            if (!confirm(`Cancel all reservations and holds for Room #${roomNum}?`)) return;
-            const res = await fetch(`/api/admin/cancel/${roomNum}`, {
-                method: "POST", headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({})
-            });
-            const data = await res.json();
-            alert(data.message || data.error);
-            loadAdminRooms(false);
-        }
-
-        async function logout() {
-            await fetch("/auth/logout", {method: "POST"});
-            window.location.href = "/login";
-        }
-
-        setDefaultBookingDates();
-        loadAdminRooms(false);
-        setInterval(() => loadAdminRooms(true), 4000);
-    </script>
-</body>
+    <script src="/admin/scripts/index.js"></script>
+  </body>
 </html>

@@ -109,16 +109,16 @@ async function loadRoom(quick = false) {
         document.getElementById("room-box").innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:start;">
                         <div>
-                            <h1 style="margin:0;">Room #${r.room_number} — ${r.room_type} (${r.area_sqm} m²)</h1>
-                            <p style="color:#475569;">Floor ${r.floor} | 🛏️ ${r.sleeping_places} Beds | 🪟 ${r.window_view ?? 'Standard'} | ${r.pets_allowed ? '🐾 Pets Allowed' : '🚫 No Pets'}</p>
+                            <h1 style="margin:0;">Номер №${r.room_number} — ${r.room_type} (${r.area_sqm} m²)</h1>
+                            <p style="color:#475569;">${r.floor} этаж | ${r.sleeping_places} спальных мест | Вид: ${r.window_view ?? 'Standard'} | ${r.pets_allowed ? 'Можно с питомцами' : 'Без питомцев'}</p>
                         </div>
-                        <div style="font-size:1.5rem; font-weight:800; color:#15803d;">$${r.price}<small style="font-size:0.85rem; color:#64748b;">/night</small></div>
+                        <div style="font-size:1.5rem; font-weight:800;">$${r.price}<small style="font-size:0.85rem; color:#64748b;">/night</small></div>
                     </div>
-                    <div><b>Amenities:</b><br/>${tagsHtml}</div>
+                    <div><b>Дополнительные удобства:</b><br/>${tagsHtml}</div>
                     <div class="free-banner ${isFreeRightNow ? 'free-now' : 'free-later'}">
                         ${isFreeRightNow
-            ? `✅ Available right now!`
-            : `⏳ Reserved — Free from: <b>${formattedFreeTime}</b> (Set as minimum check-in)`
+            ? `Номер доступна`
+            : `Номер освободится после: <b>${formattedFreeTime}</b>`
         }
                     </div>
                 `;
@@ -134,7 +134,7 @@ async function loadRoom(quick = false) {
             actionArea.innerHTML = `
                         <div style="background:#f0fdf4; border:1px solid #86efac; padding:14px; border-radius:8px;">
                             <p style="color:#15803d; font-weight:600; margin:0 0 10px 0;">
-                                🔒 Room held for you (${myHold.ttl}s remaining): ${myHold.check_in.slice(0, 16).replace('T', ' ')} &rarr; ${myHold.check_out.slice(0, 16).replace('T', ' ')}
+                                Комната забронирована для оплаты (${myHold.ttl}с осталось): ${myHold.check_in.slice(0, 16).replace('T', ' ')} &rarr; ${myHold.check_out.slice(0, 16).replace('T', ' ')}
                             </p>
                             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                                 <div>
@@ -154,7 +154,7 @@ async function loadRoom(quick = false) {
                         </div>
                     `;
         } else {
-            actionArea.innerHTML = `<button onclick="holdRoom()">Hold Room for Selected Dates (10 Min Lock)</button>`;
+            actionArea.innerHTML = `<button onclick="holdRoom()">Оформить оплату</button>`;
         }
     } catch (err) {
         console.warn("Temporary network glitch:", err);
@@ -197,5 +197,45 @@ async function completePayment() {
     alert(data.message || data.error);
     if (res.ok) window.location.href = "/";
 }
+
+// Always formats a Date as local "YYYY-MM-DDTHH:00" (minutes stripped)
+const toLocalHourISO = (date) => {
+    const d = new Date(date);
+    d.setMinutes(0, 0, 0); // Strip minutes, seconds, milliseconds
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 13) + ":00";
+};
+
+// Rounds UP to the next whole hour for "right now" so the minimum isn't in the past
+const getCurrentNextHourISO = () => {
+    const now = new Date();
+    if (now.getMinutes() > 0 || now.getSeconds() > 0) {
+        now.setHours(now.getHours() + 1);
+    }
+    return toLocalHourISO(now);
+};
+
+const enforce = () => {
+    // 1. Force check-in minutes to :00
+    if (inInput.value) {
+        inInput.value = inInput.value.slice(0, 13) + ":00";
+    }
+    if (inInput.value < minStr) inInput.value = minStr;
+    if (inInput.value > maxStr) inInput.value = maxStr;
+
+    // 2. Minimum rental is 1 hour (+3,600,000 ms) after Check-In
+    const minCheckOutDate = new Date(new Date(inInput.value).getTime() + 3600000);
+    const minOutStr = toLocalHourISO(minCheckOutDate);
+    outInput.min = minOutStr;
+
+    // 3. Force check-out minutes to :00 and ensure it is >= Check-In + 1 hour
+    if (outInput.value) {
+        outInput.value = outInput.value.slice(0, 13) + ":00";
+    }
+    if (!outInput.value || outInput.value < minOutStr) {
+        outInput.value = minOutStr;
+    }
+    if (outInput.value > maxStr) outInput.value = maxStr;
+};
 
 init();

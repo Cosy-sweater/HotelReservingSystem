@@ -2,25 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Rent Room - Hotel Portal</title>
+    <title>Портал снятия комнат в Отеле - Комната</title>
     <link href="../css/fonts.css" rel="stylesheet">
     <link href="../css/global.css" rel="stylesheet">
     <link href="/guest/styles/room.css" rel="stylesheet">
 </head>
 <body>
-    <a class="main-page-button" href="/">&larr; Back to Room Catalog</a>
+    <a class="main-page-button" href="/">&larr; Назад в каталог</a>
 
-    <div id="room-box" class="card">Loading room details...</div>
+    <div id="room-box" class="card">Загрузка...</div>
 
     <div class="card">
-        <h3>Select Rental Dates & Times</h3>
+        <h3>Выбор периода снятия</h3>
         <div class="date-selection-container">
             <div>
-                <label style="font-size:0.85rem; font-weight:600;">Check-In (Earliest Available Set Automatically)</label>
-                <input type="datetime-local" id="check_in" />
+                <label style="font-size:0.85rem; font-weight:600;">Въезд</label>
+                <input type="datetime-local" step="3600" id="check_in" />
             </div>
             <div>
-                <label style="font-size:0.85rem; font-weight:600;">Check-Out</label>
+                <label style="font-size:0.85rem; font-weight:600;">Выезд</label>
                 <input type="datetime-local" id="check_out" />
             </div>
         </div>

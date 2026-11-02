@@ -1,3 +1,5 @@
+let SHOW_REG_WINDOW = false;
+
 error_message = document.getElementsByClassName("error-message")[0];
 document.querySelectorAll("input").forEach((inputElement) => {
     inputElement.addEventListener("click", () => {
@@ -23,12 +25,19 @@ async function login() {
 }
 
 async function register() {
+    if (!SHOW_REG_WINDOW) {
+        SHOW_REG_WINDOW = true
+        document.getElementById("reg-window").style.display = "flex";
+        return;
+    }
     const username = document.getElementById("username").value;
     const password = document.getElementById("password").value;
+    const passport = document.getElementById("passport-number").value;
+    const phone = document.getElementById("phone").value;
     const res = await fetch("/auth/register", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({username, password})
+        body: JSON.stringify({username, password, passport, phone})
     });
     const data = await res.json();
     if (res.ok) {
@@ -48,4 +57,15 @@ function revealPassword() {
   }
 }
 
+function revealPassport() {
+  var x = document.getElementById("passport-number");
+  if (x.type === "password") {
+    x.type = "text";
+  } else {
+    x.type = "password";
+  }
+}
+
+
 revealPassword(); revealPassword();
+revealPassport(); revealPassport();

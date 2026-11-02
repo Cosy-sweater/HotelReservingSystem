@@ -1,37 +1,52 @@
-import os
+import csv
+import io
 import json
-from datetime import datetime
+import math
+import os
+import time
+import uuid
+from datetime import datetime, timedelta
 from functools import wraps
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import redis
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from werkzeug.security import generate_password_hash
-import csv
-import io
-import math
-import uuid
-from datetime import datetime, timedelta
-from flask import Flask, jsonify, request, Response
 
 app = Flask(__name__)
-cache = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), port=6379,
-                    decode_responses=True)
+cache = redis.Redis(
+    host=os.environ.get("REDIS_HOST", "redis"),
+    port=6379,
+    decode_responses=True
+)
+
+# Configurable background state-sync interval in seconds (Default: 300s = 5 minutes)
+SYNC_INTERVAL_SECONDS = int(os.environ.get("SYNC_INTERVAL_SECONDS", 300))
 
 
 def get_db():
-    return psycopg2.connect(
-        host=os.environ.get("DB_HOST", "db"),
-        database=os.environ.get("POSTGRES_DB", "hotel_db"),
-        user=os.environ.get("POSTGRES_USER", "hotel_admin"),
-        password=os.environ.get("POSTGRES_PASSWORD", "secretpassword")
-    )
+    for attempt in range(15):
+        try:
+            return psycopg2.connect(
+                host=os.environ.get("DB_HOST", "db"),
+                database=os.environ.get("POSTGRES_DB", "hotel_db"),
+                user=os.environ.get("POSTGRES_USER", "hotel_admin"),
+                password=os.environ.get("POSTGRES_PASSWORD", "secretpassword")
+            )
+        except psycopg2.OperationalError:
+            print(f"Waiting for PostgreSQL... ({attempt + 1}/15)")
+            time.sleep(2)
+    raise RuntimeError("Could not connect to PostgreSQL database.")
 
 
 def init_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
+        -- Advisory lock prevents Swarm replicas from colliding on startup
+        SELECT pg_advisory_xact_lock(998877);
+
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username VARCHAR(50) UNIQUE NOT NULL,
@@ -40,23 +55,7 @@ def init_db():
             passport_number VARCHAR(50),
             phone VARCHAR(30)
         );
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS passport_number VARCHAR(50);
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
-        
-        CREATE TABLE IF NOT EXISTS payments (
-            id SERIAL PRIMARY KEY,
-            transaction_id VARCHAR(64) UNIQUE NOT NULL,
-            reservation_id INT REFERENCES reservations(id) ON DELETE CASCADE,
-            username VARCHAR(50) NOT NULL,
-            room_number INT NOT NULL,
-            amount NUMERIC(10,2) NOT NULL,
-            currency VARCHAR(10) DEFAULT 'USD',
-            provider VARCHAR(30) DEFAULT 'Stripe-Sandbox',
-            card_last4 VARCHAR(4) DEFAULT '4242',
-            status VARCHAR(20) DEFAULT 'succeeded',
-            paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        
+
         CREATE TABLE IF NOT EXISTS rooms (
             room_number INT PRIMARY KEY,
             floor INT NOT NULL DEFAULT 1,
@@ -70,15 +69,6 @@ def init_db():
             is_booked BOOLEAN DEFAULT FALSE,
             booked_by VARCHAR(100) NULL
         );
-        ALTER TABLE rooms ADD COLUMN IF NOT EXISTS floor INT NOT NULL DEFAULT 1;
-        ALTER TABLE rooms ADD COLUMN IF NOT EXISTS sleeping_places INT NOT NULL DEFAULT 2;
-        ALTER TABLE rooms ADD COLUMN IF NOT EXISTS pets_allowed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE rooms ADD COLUMN IF NOT EXISTS area_sqm NUMERIC(5,2) DEFAULT 25.0;
-        ALTER TABLE rooms ADD COLUMN IF NOT EXISTS window_view VARCHAR(50) NULL;
-        ALTER TABLE rooms ADD COLUMN IF NOT EXISTS additional_info TEXT[] NULL;
-        ALTER TABLE rooms ALTER COLUMN window_view DROP NOT NULL;
-        ALTER TABLE rooms ALTER COLUMN additional_info DROP NOT NULL;
-        ALTER TABLE rooms ALTER COLUMN additional_info DROP DEFAULT;
 
         CREATE TABLE IF NOT EXISTS reservations (
             id SERIAL PRIMARY KEY,
@@ -89,9 +79,20 @@ def init_db():
             status VARCHAR(20) NOT NULL DEFAULT 'active',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        ALTER TABLE reservations ADD COLUMN IF NOT EXISTS check_in TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
-        ALTER TABLE reservations ADD COLUMN IF NOT EXISTS check_out TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '1 day');
-        ALTER TABLE reservations ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+
+        CREATE TABLE IF NOT EXISTS payments (
+            id SERIAL PRIMARY KEY,
+            transaction_id VARCHAR(64) UNIQUE NOT NULL,
+            reservation_id INT REFERENCES reservations(id) ON DELETE CASCADE,
+            username VARCHAR(50) NOT NULL,
+            room_number INT NOT NULL,
+            amount NUMERIC(10,2) NOT NULL,
+            currency VARCHAR(10) DEFAULT 'USD',
+            provider VARCHAR(30) DEFAULT 'Stripe',
+            card_last4 VARCHAR(4) DEFAULT '4242',
+            status VARCHAR(20) DEFAULT 'succeeded',
+            paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
 
         INSERT INTO rooms (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info) VALUES
         (101, 1, 'Standard Single', 1, false, 20.0, NULL, 100, NULL),
@@ -109,38 +110,33 @@ def require_auth(required_role=None):
         @wraps(f)
         def wrapper(*args, **kwargs):
             session_id = request.cookies.get("session_id")
-            session_data = cache.hgetall(
-                f"session:{session_id}") if session_id else None
+            session_data = cache.hgetall(f"session:{session_id}") if session_id else None
             if not session_data:
                 return jsonify({"error": "Unauthorized"}), 401
             if required_role and session_data.get("role") != required_role:
-                return jsonify(
-                    {"error": "Forbidden: Admin privileges required"}), 403
+                return jsonify({"error": "Forbidden: Admin privileges required"}), 403
             request.current_user = session_data
             return f(*args, **kwargs)
-
         return wrapper
-
     return decorator
 
 
 def parse_iso_dt(dt_str):
-    """Parses ISO datetime string 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DD HH:MM:SS'."""
     if not dt_str:
         return None
-    return datetime.fromisoformat(dt_str.replace("Z", ""))
+    return datetime.fromisoformat(dt_str.replace("Z", "")).replace(minute=0, second=0, microsecond=0)
 
 
 def sync_reservation_states(cur, force=False):
     """
-    Updates reservation states (upcoming -> active -> completed) in PostgreSQL.
-    Protected by a 30-second Redis cooldown so spamming GET /api/rooms cannot
-    spam SQL UPDATE queries. Pass force=True after booking/cancelling.
+    Synchronizes reservation statuses (upcoming -> active -> completed) and room flags.
+    - When force=False (on GET requests): runs at most once every SYNC_INTERVAL_SECONDS (default 5 mins).
+    - When force=True (on booking/payment/cancellation): executes immediately and resets the timer.
     """
-    if not force:
-        should_run = cache.set("sync:reservations:cooldown", "1", nx=True,
-                               ex=30)
-        if not should_run:
+    if force:
+        cache.set("sync:reservations:cooldown", "1", ex=SYNC_INTERVAL_SECONDS)
+    else:
+        if not cache.set("sync:reservations:cooldown", "1", nx=True, ex=SYNC_INTERVAL_SECONDS):
             return False
 
     cur.execute("""
@@ -175,7 +171,6 @@ def sync_reservation_states(cur, force=False):
 
 
 def get_room_holds(room_num):
-    """Returns all active Redis holds for a room with their timeframes and TTLs."""
     holds = []
     for key in cache.scan_iter(f"hold:room:{room_num}:*"):
         raw = cache.get(key)
@@ -188,11 +183,6 @@ def get_room_holds(room_num):
 
 
 def check_timeframe_conflicts(cur, room_num, req_in, req_out, ignore_user=None):
-    """
-    Checks both PostgreSQL reservations and Redis holds for overlapping timeframes.
-    Overlap condition: existing_start < req_out AND existing_end > req_in
-    """
-    # 1. Check PostgreSQL reservations
     cur.execute("""
         SELECT id, username, check_in, check_out, status
         FROM reservations
@@ -214,7 +204,6 @@ def check_timeframe_conflicts(cur, room_num, req_in, req_out, ignore_user=None):
         for row in cur.fetchall()
     ]
 
-    # 2. Check Redis active holds
     redis_conflicts = []
     for hold in get_room_holds(room_num):
         if ignore_user and hold.get("username") == ignore_user:
@@ -233,14 +222,8 @@ def check_timeframe_conflicts(cur, room_num, req_in, req_out, ignore_user=None):
     return db_conflicts + redis_conflicts
 
 
-# --- ROOMS & QUICKLOAD ENDPOINT ---
 def compute_free_from(reservations, holds):
-    """
-    Returns the exact check_out timestamp of the current/upcoming booking block,
-    or None if the room has no active/upcoming bookings.
-    """
     intervals = []
-
     for r in reservations:
         if r.get("status") in ("active", "upcoming"):
             c_in = parse_iso_dt(r["check_in"])
@@ -255,13 +238,9 @@ def compute_free_from(reservations, holds):
             intervals.append((h_in, h_out))
 
     if not intervals:
-        return None  # Room is completely free right now!
+        return None
 
-    # Sort by check_in time
     intervals.sort(key=lambda x: x[0])
-
-    # Start from the end of the first active/upcoming reservation
-    # and chain any back-to-back or overlapping reservations
     free_at = intervals[0][1]
     for start, end in intervals[1:]:
         if start <= free_at + timedelta(minutes=30):
@@ -273,16 +252,14 @@ def compute_free_from(reservations, holds):
     return free_at.strftime("%Y-%m-%dT%H:%M")
 
 
+# --- ROOMS ENDPOINT ---
 @app.route("/api/rooms", methods=["GET"])
 @require_auth()
 def get_rooms():
-    quick_mode = request.args.get("quick", "false").lower() in ("true", "1")
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    if not quick_mode:
-        # Full load: auto-update reservation states in DB before reading
-        sync_reservation_states(cur)
+    if sync_reservation_states(cur, force=False):
         conn.commit()
 
     cur.execute("""
@@ -292,7 +269,6 @@ def get_rooms():
     """)
     rooms_rows = cur.fetchall()
 
-    # Fetch upcoming & active reservations per room
     cur.execute("""
         SELECT id, room_number, username, check_in, check_out, status
         FROM reservations
@@ -305,8 +281,7 @@ def get_rooms():
 
     res_by_room = {}
     for r in res_rows:
-        rn = r["room_number"]
-        res_by_room.setdefault(rn, []).append({
+        res_by_room.setdefault(r["room_number"], []).append({
             "id": r["id"],
             "username": r["username"],
             "check_in": r["check_in"].isoformat(),
@@ -318,36 +293,28 @@ def get_rooms():
     for r in rooms_rows:
         rn = r["room_number"]
         holds = get_room_holds(rn)
-        first_hold = holds[0] if holds else None
         room_res = res_by_room.get(rn, [])
-        free_from_iso = compute_free_from(room_res, holds)
         result.append({
             "room_number": rn,
             "floor": r["floor"],
             "room_type": r["room_type"],
             "sleeping_places": r["sleeping_places"],
             "pets_allowed": r["pets_allowed"],
-            "area_sqm": float(r["area_sqm"]) if r[
-                                                    "area_sqm"] is not None else 0.0,
+            "area_sqm": float(r["area_sqm"]) if r["area_sqm"] is not None else 0.0,
             "window_view": r["window_view"],
-            # Nullable (returns null in JSON if None)
             "price": r["price"],
             "additional_info": r["additional_info"],
-            # Nullable (returns null or [] in JSON)
             "is_booked": r["is_booked"],
             "booked_by": r["booked_by"],
-            "reservations": res_by_room.get(rn, []),
+            "reservations": room_res,
             "holds": holds,
-            "free_from": free_from_iso,
-            "is_locked": len(holds) > 0,
-            "locked_by": first_hold["username"] if first_hold else None,
-            "lock_expires_in": first_hold["ttl"] if first_hold else 0
+            "free_from": compute_free_from(room_res, holds)
         })
 
     return jsonify(result)
 
 
-# --- HOLD ROOM WITH TIMEFRAME CHECKING ---
+# --- HOLD ROOM ---
 @app.route("/api/hold/<int:room_num>", methods=["POST"])
 @require_auth()
 def hold_room(room_num):
@@ -358,32 +325,25 @@ def hold_room(room_num):
 
     try:
         req_in = parse_iso_dt(check_in_str) if check_in_str else datetime.now()
-        req_out = parse_iso_dt(
-            check_out_str) if check_out_str else datetime.fromtimestamp(
-            req_in.timestamp() + 86400)
+        req_out = parse_iso_dt(check_out_str) if check_out_str else req_in + timedelta(days=1)
     except ValueError:
-        return jsonify({"available": False,
-                        "error": "Invalid ISO datetime format. Use YYYY-MM-DDTHH:MM"}), 400
+        return jsonify({"available": False, "error": "Invalid ISO datetime format. Use YYYY-MM-DDTHH:MM"}), 400
 
     if req_out <= req_in:
-        return jsonify({"available": False,
-                        "error": "Check-out time must be after check-in time."}), 400
+        return jsonify({"available": False, "error": "Check-out time must be after check-in time."}), 400
 
     conn = get_db()
     cur = conn.cursor()
-    sync_reservation_states(cur)
-    conn.commit()
+    if sync_reservation_states(cur, force=False):
+        conn.commit()
 
-    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;",
-                (room_num,))
+    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;", (room_num,))
     if not cur.fetchone():
         cur.close()
         conn.close()
-        return jsonify({"available": False,
-                        "error": f"Room {room_num} does not exist."}), 404
+        return jsonify({"available": False, "error": f"Room {room_num} does not exist."}), 404
 
-    conflicts = check_timeframe_conflicts(cur, room_num, req_in, req_out,
-                                          ignore_user=user)
+    conflicts = check_timeframe_conflicts(cur, room_num, req_in, req_out, ignore_user=user)
     cur.close()
     conn.close()
 
@@ -412,44 +372,70 @@ def hold_room(room_num):
     })
 
 
-# --- PAY & CONVERT HOLD TO RESERVATION ---
+# --- PAY & CONVERT HOLD TO RESERVATION (IMMEDIATE DB SYNC) ---
 @app.route("/api/pay/<int:room_num>", methods=["POST"])
 @require_auth()
 def pay_and_book(room_num):
     user = request.current_user["username"]
     hold_raw = cache.get(f"hold:room:{room_num}:{user}")
     if not hold_raw:
-        return jsonify(
-            {"error": "Your checkout hold expired or does not exist."}), 403
+        return jsonify({"error": "Your checkout hold expired or does not exist."}), 403
+
+    data = request.json if request.is_json else {}
+    provider = data.get("provider", "Stripe")
+    card_number = str(data.get("card_number", "4242")).replace(" ", "")
+    card_last4 = card_number[-4:] if len(card_number) >= 4 else "4242"
 
     hold_data = json.loads(hold_raw)
     req_in = parse_iso_dt(hold_data["check_in"])
     req_out = parse_iso_dt(hold_data["check_out"])
-    status = "active" if req_in <= datetime.now() < req_out else "upcoming"
+    nights = max(1, math.ceil((req_out - req_in).total_seconds() / 86400))
 
     conn = get_db()
     cur = conn.cursor()
+
+    cur.execute("SELECT price FROM rooms WHERE room_number = %s;", (room_num,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Room not found"}), 404
+
+    total_amount = float(row[0]) * nights
+    status = "active" if req_in <= datetime.now() < req_out else "upcoming"
+    transaction_id = f"TXN-{uuid.uuid4().hex[:12].upper()}"
+
     cur.execute("""
         INSERT INTO reservations (room_number, username, check_in, check_out, status)
         VALUES (%s, %s, %s, %s, %s) RETURNING id;
     """, (room_num, user, req_in, req_out, status))
     res_id = cur.fetchone()[0]
-    sync_reservation_states(cur)
+
+    cur.execute("""
+        INSERT INTO payments (transaction_id, reservation_id, username, room_number, amount, provider, card_last4, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'succeeded');
+    """, (transaction_id, res_id, user, room_num, total_amount, provider, card_last4))
+
+    # Immediate update of affected room & reservation states
+    sync_reservation_states(cur, force=True)
     conn.commit()
     cur.close()
     conn.close()
 
     cache.delete(f"hold:room:{room_num}:{user}")
     return jsonify({
-        "message": f"Payment processed! Room {room_num} booked for {user}.",
+        "message": f"Payment of ${total_amount:.2f} via {provider} processed! Room {room_num} booked.",
+        "transaction_id": transaction_id,
         "reservation_id": res_id,
+        "nights": nights,
+        "total_amount": total_amount,
         "check_in": req_in.isoformat(),
         "check_out": req_out.isoformat(),
         "status": status
     })
 
 
-# --- TWO-WAY USER <-> RENTED ROOMS ENDPOINTS ---
+# --- USER PROFILE & RENTED ROOMS ---
 @app.route("/api/users/<string:username>", methods=["GET"])
 @require_auth()
 def get_user_profile_and_rooms(username):
@@ -459,8 +445,7 @@ def get_user_profile_and_rooms(username):
 
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    if request.args.get("quick", "false").lower() not in ("true", "1"):
-        sync_reservation_states(cur)
+    if sync_reservation_states(cur, force=False):
         conn.commit()
 
     cur.execute("""
@@ -501,8 +486,7 @@ def get_user_profile_and_rooms(username):
 def list_all_users():
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    if request.args.get("quick", "false").lower() not in ("true", "1"):
-        sync_reservation_states(cur)
+    if sync_reservation_states(cur, force=False):
         conn.commit()
 
     cur.execute("""
@@ -530,7 +514,7 @@ def list_all_users():
     return jsonify(users)
 
 
-# --- ADMIN CREATE/UPDATE ROOM (WITH NULLABLE FIELDS) ---
+# --- ADMIN ROOM CREATE / UPDATE ---
 @app.route("/api/admin/rooms", methods=["POST"])
 @require_auth(required_role="admin")
 def create_or_update_room():
@@ -546,15 +530,13 @@ def create_or_update_room():
     area_sqm = data.get("area_sqm", 25.0)
     price = data.get("price", 100)
 
-    # Nullable handling for window_view and additional_info
     raw_view = data.get("window_view")
-    window_view = raw_view.strip() if isinstance(raw_view,
-                                                 str) and raw_view.strip() else None
+    window_view = raw_view.strip() if isinstance(raw_view, str) and raw_view.strip() else None
 
     raw_info = data.get("additional_info")
     if isinstance(raw_info, list):
         cleaned_info = [str(x).strip() for x in raw_info if str(x).strip()]
-        additional_info = cleaned_info if len(cleaned_info) > 0 else None
+        additional_info = cleaned_info if cleaned_info else None
     else:
         additional_info = None
 
@@ -572,15 +554,14 @@ def create_or_update_room():
             window_view = EXCLUDED.window_view,
             price = EXCLUDED.price,
             additional_info = EXCLUDED.additional_info;
-    """, (room_number, floor, room_type, sleeping_places, pets_allowed,
-          area_sqm, window_view, price, additional_info))
+    """, (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info))
     conn.commit()
     cur.close()
     conn.close()
     return jsonify({"message": f"Room {room_number} saved successfully!"})
 
 
-# --- SMART ADMIN BOOKING (CHECKS ROOM, CHECKS USER & SUGGESTS CREATION, CHECKS DATES) ---
+# --- ADMIN MANUAL BOOKING (IMMEDIATE DB SYNC) ---
 @app.route("/api/admin/book", methods=["POST"])
 @require_auth(required_role="admin")
 def admin_create_reservation():
@@ -592,29 +573,22 @@ def admin_create_reservation():
     check_out_str = data.get("check_out")
 
     if not room_number or not target_user:
-        return jsonify({"code": "MISSING_FIELDS",
-                        "error": "room_number and username are required."}), 400
+        return jsonify({"code": "MISSING_FIELDS", "error": "room_number and username are required."}), 400
 
     try:
         req_in = parse_iso_dt(check_in_str) if check_in_str else datetime.now()
-        req_out = parse_iso_dt(
-            check_out_str) if check_out_str else datetime.fromtimestamp(
-            req_in.timestamp() + 86400)
+        req_out = parse_iso_dt(check_out_str) if check_out_str else req_in + timedelta(days=1)
     except ValueError:
-        return jsonify({"code": "INVALID_DATES",
-                        "error": "Invalid date format. Use YYYY-MM-DDTHH:MM."}), 400
+        return jsonify({"code": "INVALID_DATES", "error": "Invalid date format. Use YYYY-MM-DDTHH:MM."}), 400
 
     if req_out <= req_in:
-        return jsonify({"code": "INVALID_DATES",
-                        "error": "Check-out must be after check-in."}), 400
+        return jsonify({"code": "INVALID_DATES", "error": "Check-out must be after check-in."}), 400
 
     conn = get_db()
     cur = conn.cursor()
     sync_reservation_states(cur, force=True)
 
-    # 1. Verify Room Exists
-    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;",
-                (room_number,))
+    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;", (room_number,))
     if not cur.fetchone():
         cur.close()
         conn.close()
@@ -623,12 +597,8 @@ def admin_create_reservation():
             "error": f"Room #{room_number} does not exist in the database. Create the room first."
         }), 404
 
-    # 2. Verify User Exists (or prompt frontend to create with expanded info)
-    cur.execute(
-        "SELECT username, passport_number, phone FROM users WHERE username = %s;",
-        (target_user,))
-    user_row = cur.fetchone()
-    if not user_row:
+    cur.execute("SELECT username FROM users WHERE username = %s;", (target_user,))
+    if not cur.fetchone():
         if not create_new_user:
             cur.close()
             conn.close()
@@ -639,17 +609,14 @@ def admin_create_reservation():
                 "error": f"User '{target_user}' does not exist. Would you like to create a new user profile?"
             }), 404
 
-        # Admin confirmed creation: create user with expanded info
         new_password = data.get("password") or "guest123"
         passport = (data.get("passport_number") or "").strip() or None
         phone = (data.get("phone") or "").strip() or None
         cur.execute("""
             INSERT INTO users (username, password_hash, role, passport_number, phone)
             VALUES (%s, %s, 'user', %s, %s);
-        """, (target_user, generate_password_hash(new_password), passport,
-              phone))
+        """, (target_user, generate_password_hash(new_password), passport, phone))
     else:
-        # Optional: update passport/phone if admin provided them for an existing user
         passport = (data.get("passport_number") or "").strip()
         phone = (data.get("phone") or "").strip()
         if passport or phone:
@@ -660,7 +627,6 @@ def admin_create_reservation():
                 WHERE username = %s;
             """, (passport or None, phone or None, target_user))
 
-    # 3. Verify Timeframe Availability
     conflicts = check_timeframe_conflicts(cur, room_number, req_in, req_out)
     if conflicts:
         conn.rollback()
@@ -673,7 +639,6 @@ def admin_create_reservation():
             "conflicts": conflicts
         }), 409
 
-    # 4. Create the reservation
     status = "active" if req_in <= datetime.now() < req_out else "upcoming"
     cur.execute("""
         INSERT INTO reservations (room_number, username, check_in, check_out, status)
@@ -686,7 +651,6 @@ def admin_create_reservation():
     cur.close()
     conn.close()
 
-    # Clear any holds on this room for that user
     cache.delete(f"hold:room:{room_number}:{target_user}")
 
     return jsonify({
@@ -697,7 +661,7 @@ def admin_create_reservation():
     })
 
 
-# --- CANCEL RESERVATION (BY ROOM OR BY SPECIFIC RESERVATION ID) ---
+# --- CANCEL RESERVATION (IMMEDIATE DB SYNC) ---
 @app.route("/api/admin/cancel/<int:room_num>", methods=["POST"])
 @require_auth(required_role="admin")
 def admin_cancel_reservation(room_num):
@@ -709,11 +673,13 @@ def admin_cancel_reservation(room_num):
     if res_id:
         cur.execute(
             "UPDATE reservations SET status = 'cancelled' WHERE id = %s AND room_number = %s;",
-            (res_id, room_num))
+            (res_id, room_num)
+        )
     else:
         cur.execute(
             "UPDATE reservations SET status = 'cancelled' WHERE room_number = %s AND status IN ('upcoming', 'active');",
-            (room_num,))
+            (room_num,)
+        )
 
     sync_reservation_states(cur, force=True)
     conn.commit()
@@ -723,11 +689,10 @@ def admin_cancel_reservation(room_num):
     for key in cache.scan_iter(f"hold:room:{room_num}:*"):
         cache.delete(key)
 
-    return jsonify(
-        {"message": f"Reservation(s) for Room #{room_num} cancelled."})
+    return jsonify({"message": f"Reservation(s) for Room #{room_num} cancelled."})
 
 
-# --- PAYMENTS LIST ENDPOINT ---
+# --- PAYMENTS & CSV IMPORT/EXPORT ENDPOINTS ---
 @app.route("/api/admin/payments", methods=["GET"])
 @require_auth(required_role="admin")
 def get_all_payments():
@@ -748,7 +713,6 @@ def get_all_payments():
     return jsonify(rows)
 
 
-# --- 1. EXPORT ROOMS CSV ---
 @app.route("/api/admin/export/rooms", methods=["GET"])
 @require_auth(required_role="admin")
 def export_rooms_csv():
@@ -787,15 +751,13 @@ def export_rooms_csv():
     )
 
 
-# --- 2. IMPORT ROOMS CSV (MASS CREATE / UPDATE) ---
 @app.route("/api/admin/import/rooms", methods=["POST"])
 @require_auth(required_role="admin")
 def import_rooms_csv():
     if "file" not in request.files:
         return jsonify({"error": "No CSV file uploaded"}), 400
 
-    file = request.files["file"]
-    content = file.stream.read().decode("utf-8-sig")
+    content = request.files["file"].stream.read().decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
 
     conn = get_db()
@@ -810,17 +772,14 @@ def import_rooms_csv():
             floor = int(row.get("floor") or 1)
             room_type = (row.get("room_type") or "Standard").strip()
             sleeping_places = int(row.get("sleeping_places") or 2)
-            pets_allowed = str(row.get("pets_allowed", "")).strip().lower() in (
-                "true", "1", "yes")
+            pets_allowed = str(row.get("pets_allowed", "")).strip().lower() in ("true", "1", "yes")
             area_sqm = float(row.get("area_sqm") or 25.0)
             window_view = (row.get("window_view") or "").strip() or None
             price = int(float(row.get("price") or 100))
 
             raw_info = (row.get("additional_info") or "").strip()
-            # Supports pipe-separated (Wi-Fi|TV) or comma-separated values
             sep = "|" if "|" in raw_info else ","
-            info_list = [x.strip() for x in raw_info.split(sep) if
-                         x.strip()] if raw_info else None
+            info_list = [x.strip() for x in raw_info.split(sep) if x.strip()] if raw_info else None
 
             cur.execute("""
                 INSERT INTO rooms (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info)
@@ -834,8 +793,7 @@ def import_rooms_csv():
                     window_view = EXCLUDED.window_view,
                     price = EXCLUDED.price,
                     additional_info = EXCLUDED.additional_info;
-            """, (room_number, floor, room_type, sleeping_places, pets_allowed,
-                  area_sqm, window_view, price, info_list))
+            """, (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, info_list))
             count += 1
 
         conn.commit()
@@ -846,11 +804,9 @@ def import_rooms_csv():
         cur.close()
         conn.close()
 
-    return jsonify(
-        {"message": f"Successfully imported/updated {count} rooms from CSV!"})
+    return jsonify({"message": f"Successfully imported/updated {count} rooms from CSV!"})
 
 
-# --- 3. EXPORT PAYMENTS CSV ---
 @app.route("/api/admin/export/payments", methods=["GET"])
 @require_auth(required_role="admin")
 def export_payments_csv():
@@ -872,19 +828,15 @@ def export_payments_csv():
         "amount", "currency", "provider", "card_last4", "status", "paid_at"
     ])
     for r in rows:
-        writer.writerow(
-            [r[0], r[1], r[2], r[3], float(r[4]), r[5], r[6], r[7], r[8],
-             r[9].isoformat()])
+        writer.writerow([r[0], r[1], r[2], r[3], float(r[4]), r[5], r[6], r[7], r[8], r[9].isoformat()])
 
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=payments_export.csv"}
+        headers={"Content-Disposition": "attachment; filename=payments_export.csv"}
     )
 
 
-# --- 4. EXPORT USERS CSV ---
 @app.route("/api/admin/export/users", methods=["GET"])
 @require_auth(required_role="admin")
 def export_users_csv():
@@ -904,8 +856,7 @@ def export_users_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["id", "username", "role", "passport_number", "phone",
-                     "active_bookings"])
+    writer.writerow(["id", "username", "role", "passport_number", "phone", "active_bookings"])
     for r in rows:
         writer.writerow([r[0], r[1], r[2], r[3] or "", r[4] or "", r[5]])
 
@@ -915,14 +866,14 @@ def export_users_csv():
         headers={"Content-Disposition": "attachment; filename=users_export.csv"}
     )
 
+
 @app.route("/api/admin/import/users", methods=["POST"])
 @require_auth(required_role="admin")
 def import_users_csv():
     if "file" not in request.files:
         return jsonify({"error": "No CSV file uploaded"}), 400
 
-    file = request.files["file"]
-    content = file.stream.read().decode("utf-8-sig")
+    content = request.files["file"].stream.read().decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
 
     conn = get_db()
@@ -945,7 +896,6 @@ def import_users_csv():
             default_hash = generate_password_hash(raw_password if raw_password else "guest123")
 
             if raw_password:
-                # If a 'password' column was provided and non-empty, update password too
                 cur.execute("""
                     INSERT INTO users (username, password_hash, role, passport_number, phone)
                     VALUES (%s, %s, %s, %s, %s)
@@ -956,7 +906,6 @@ def import_users_csv():
                         phone = EXCLUDED.phone;
                 """, (username, default_hash, role, passport, phone))
             else:
-                # Otherwise preserve existing password_hash for existing users
                 cur.execute("""
                     INSERT INTO users (username, password_hash, role, passport_number, phone)
                     VALUES (%s, %s, %s, %s, %s)

@@ -2,8 +2,8 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    max-width: none;
     height: 100vh;
-    background-color: #5ec8ff;
 }
 
 .window {
@@ -35,11 +35,20 @@ h2 {
 .checkbox-container {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
 }
 
 .show-password-checkbox {
-    width: auto;
+    max-width: min-content;
+    min-width: 0;
     transform: scale(2, 2);
+}
+
+.inputs-wrapper {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
 }
 
 p {
@@ -54,7 +63,9 @@ p {
 }
 
 input, button {
-    width: 50%;
+    width: 40vw;
+    min-width: 15rem;
+    flex: 1 1 auto;
     margin: 1rem;
     padding: 10px;
     font-size: 1.5rem;
@@ -62,6 +73,7 @@ input, button {
 
 .button-container {
     display: flex;
+    flex-wrap: balance;
     justify-content: space-evenly;
     width: 50%;
 }

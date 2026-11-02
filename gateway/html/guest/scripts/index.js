@@ -1,22 +1,24 @@
 let allRooms = [];
 
-// Set default filter timeframe: Now -> Tomorrow
+// Format date to local YYYY-MM-DDTHH:00 (whole hours only)
+const toLocalHourISO = (date) => {
+    const d = new Date(date);
+    d.setMinutes(0, 0, 0);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 13) + ":00";
+};
+
+// Set default filter timeframe: Now -> Tomorrow (hourly snapped)
 function setDefaultDates() {
-
-    const toLocalISO = (date) => {
-        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-        return local.toISOString().slice(0, 16);
-    };
-
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 86400000); // Default check-out: +1 day
 
     const maxDate = new Date(now);
     maxDate.setFullYear(maxDate.getFullYear() + 1);
 
-    const minStr = toLocalISO(now);
-    const tomorrowStr = toLocalISO(tomorrow);
-    const maxStr = toLocalISO(maxDate);
+    const minStr = toLocalHourISO(now);
+    const tomorrowStr = toLocalHourISO(tomorrow);
+    const maxStr = toLocalHourISO(maxDate);
 
     const inInput = document.getElementById("f_in") || document.getElementById("check_in") || document.getElementById("book_in");
     const outInput = document.getElementById("f_out") || document.getElementById("check_out") || document.getElementById("book_out");
@@ -29,15 +31,26 @@ function setDefaultDates() {
     outInput.min = minStr;
     outInput.max = maxStr;
 
-    inInput.value = minStr;
-    outInput.value = tomorrowStr;
+    if (!inInput.value) inInput.value = minStr;
+    if (!outInput.value) outInput.value = tomorrowStr;
 
     const enforceBounds = () => {
+        if (inInput.value) {
+            inInput.value = inInput.value.slice(0, 13) + ":00";
+        }
         if (inInput.value < minStr) inInput.value = minStr;
         if (inInput.value > maxStr) inInput.value = maxStr;
 
-        outInput.min = inInput.value || minStr;
-        if (outInput.value < outInput.min) outInput.value = outInput.min;
+        const minCheckOutDate = new Date(new Date(inInput.value).getTime() + 3600000); // Minimum 1 hour
+        const minOutStr = toLocalHourISO(minCheckOutDate);
+        outInput.min = minOutStr;
+
+        if (outInput.value) {
+            outInput.value = outInput.value.slice(0, 13) + ":00";
+        }
+        if (!outInput.value || outInput.value < minOutStr) {
+            outInput.value = minOutStr;
+        }
         if (outInput.value > maxStr) outInput.value = maxStr;
     };
 
@@ -57,12 +70,13 @@ async function init() {
         document.getElementById("admin-btn").style.display = "inline-block";
     }
 
-    await fetchRooms(false);
+    await fetchRooms();
+    setInterval(() => fetchRooms(), 5000); // Polling syncs every 5 seconds without spamming DB writes
 }
 
-async function fetchRooms(quick = false) {
+async function fetchRooms() {
     try {
-        const res = await fetch(`/api/rooms${quick ? '?quick=true' : ''}`);
+        const res = await fetch(`/api/rooms`);
         if (res.status === 401) {
             window.location.href = "/login";
             return;
@@ -75,7 +89,6 @@ async function fetchRooms(quick = false) {
     }
 }
 
-
 function getAvailabilityState(room, filterIn, filterOut) {
     const reqIn = filterIn ? new Date(filterIn) : new Date();
     const reqOut = filterOut ? new Date(filterOut) : new Date(reqIn.getTime() + 86400000);
@@ -86,7 +99,7 @@ function getAvailabilityState(room, filterIn, filterOut) {
         return rIn < reqOut && rOut > reqIn;
     });
     if (overlappingRes || (!filterIn && room.is_booked)) {
-        return {rank: 2, label: "Забронировано", css: "status-booked"};
+        return { rank: 2, label: "Забронировано", css: "status-booked" };
     }
 
     const overlappingHold = (room.holds || []).find(hold => {
@@ -102,7 +115,7 @@ function getAvailabilityState(room, filterIn, filterOut) {
         };
     }
 
-    return {rank: 0, label: "Свободно", css: "status-available"};
+    return { rank: 0, label: "Свободно", css: "status-available" };
 }
 
 function renderRooms() {
@@ -110,7 +123,7 @@ function renderRooms() {
     const filterOut = document.getElementById("f_out").value;
     const minBeds = parseInt(document.getElementById("f_beds").value) || 0;
     const maxPrice = parseFloat(document.getElementById("f_price").value) || Infinity;
-    const search = document.getElementById("f_search").value.trim().toLowerCase();
+    const search = document.getElementById("f_search")?.value.trim().toLowerCase() || "";
     const petsOnly = document.getElementById("f_pets").checked;
     const availOnly = document.getElementById("f_avail_only").checked;
     const sortMode = document.getElementById("f_sort").value;
@@ -138,6 +151,7 @@ function renderRooms() {
             return true;
         });
 
+    // Fixed syntax for sorting operators
     filtered.sort((a, b) => {
         if (a._avail.rank !== b._avail.rank) {
             return a._avail.rank - b._avail.rank;
@@ -150,56 +164,57 @@ function renderRooms() {
 
     const container = document.getElementById("rooms-container");
     if (filtered.length === 0) {
-        container.innerHTML = `<p class="label-no-rooms">Не найдены комнаты по заданным критериями.</p>`;
+        container.innerHTML = `<p class="label-no-rooms">Не найдены комнаты по заданным критериям.</p>`;
         return;
     }
 
     const queryDates = `in=${encodeURIComponent(filterIn)}&out=${encodeURIComponent(filterOut)}`;
 
-    // 3. Render Cards
     container.innerHTML = filtered.map(r => {
         const isAvailable = r._avail.rank === 0;
         const infoList = Array.isArray(r.additional_info) && r.additional_info.length > 0
             ? r.additional_info.map(tag => `<span class="info-tag">${tag}</span>`).join("")
-            : `<span style="font-size:0.8rem; color:#94a3b8;">No extra amenities listed</span>`;
+            : `<span style="font-size:0.8rem; color:#94a3b8;">Без доп. удобств</span>`;
 
         return `
-                    <a href="/room?id=${r.room_number}&${queryDates}">
-                        <div class="room-card ${isAvailable ? '' : 'unavailable'}">
-                            <div style="flex:1;">
-                                <div class="room-header">
-                                    <h3 class="room-title">Комната #${r.room_number} — ${r.room_type}</h3>
-                                    <span class="area-badge">${r.area_sqm} м²</span>
-                                    <span class="status-badge ${r._avail.css}">${r._avail.label}</span>
-                                </div>
-    
-                                <div class="room-specs">
-                                    <span>Спальные места: <b>${r.sleeping_places}</b></span>
-                                    <span>Этаж <b>${r.floor}</b></span>
-                                    ${r.window_view ? `<span>Вид: ${r.window_view}</span>` : ''}
-                                    <span>${r.pets_allowed ? 'Можно с питомцами' : 'Без питомцев'}</span>
-                                </div>
-    
-                                <div class="tags-row">
-                                    ${infoList}
-                                </div>
-                            </div>
-    
-                            <div class="room-action">
-                                <div class="price-box">$${r.price} <span>/ ночь</span></div>
-                                <small>${r.free_from ? `Свободна с: ${r.free_from.replace('T', ' ')}` : 'Свободна сейчас'}</small>
-                                <span class="rent-btn ${isAvailable ? '' : 'secondary'}" href="/room?id=${r.room_number}&${queryDates}">
-                                    ${isAvailable ? 'Снять комнату &rarr;' : 'Посмотреть доступные даты &rarr;'}
-                                </span>
-                            </div>
+            <a href="/room?id=${r.room_number}&${queryDates}" style="text-decoration: none; color: inherit; display: block;">
+                <div class="room-card ${isAvailable ? '' : 'unavailable'}">
+                    <div style="flex:1;">
+                        <div class="room-header">
+                            <h3 class="room-title">Комната #${r.room_number} — ${r.room_type}</h3>
+                            <span class="area-badge">${r.area_sqm} м²</span>
+                            <span class="status-badge ${r._avail.css}">${r._avail.label}</span>
                         </div>
-                    </a>
-                `;
+
+                        <div class="room-specs">
+                            <span>Спальные места: <b>${r.sleeping_places}</b></span>
+                            <span>Этаж <b>${r.floor}</b></span>
+                            ${r.window_view ? `<span>Вид: ${r.window_view}</span>` : ''}
+                            <span style="color: ${r.pets_allowed ? "green" : "red"}">${r.pets_allowed ? 'Можно с питомцами' : 'Без питомцев'}</span>
+                        </div>
+
+                        <div class="tags-row">
+                            ${infoList}
+                        </div>
+                    </div>
+
+                    <div class="room-action">
+                        <div class="price-box">$${r.price} <span>/ ночь</span></div>
+                        <small style="color: #64748b; display: block; margin-bottom: 4px;">
+                            ${r.free_from ? `Свободна с: ${r.free_from.replace('T', ' ')}` : 'Свободна сейчас'}
+                        </small>
+                        <span class="rent-btn ${isAvailable ? '' : 'secondary'}">
+                            ${isAvailable ? 'Снять комнату &rarr;' : 'Посмотреть доступные даты &rarr;'}
+                        </span>
+                    </div>
+                </div>
+            </a>
+        `;
     }).join("");
 }
 
 async function logout() {
-    await fetch("/auth/logout", {method: "POST"});
+    await fetch("/auth/logout", { method: "POST" });
     window.location.href = "/login";
 }
 
@@ -207,6 +222,7 @@ function resetFilters() {
     setDefaultDates();
     document.getElementById("f_beds").value = "0";
     document.getElementById("f_price").value = "";
+    if (document.getElementById("f_search")) document.getElementById("f_search").value = "";
     document.getElementById("f_pets").checked = false;
     document.getElementById("f_avail_only").checked = false;
     document.getElementById("f_sort").value = "price_asc";

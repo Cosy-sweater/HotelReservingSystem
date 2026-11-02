@@ -1,13 +1,19 @@
 *,
 *::before,
 *::after {
-  box-sizing: border-box;
+    box-sizing: border-box;
 }
 
 body {
-  margin: 0 auto;
-  font-family: Raleway, sans-serif;
+    margin: 0 auto;
+    font-family: Raleway, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    background: #d3d3d3;
+    color: #1e293b;
 }
+
 
 h1,
 h2,
@@ -20,20 +26,21 @@ ul,
 ol,
 li,
 blockquote {
-  margin: 0;
-  padding: 0;
+    margin: 0;
+    padding: 0;
 }
 
 a {
-  color: inherit;
+    color: inherit;
 }
 
 img {
-  width: 100%;
+    width: 100%;
 }
 
 input, button {
     font: inherit;
     border: solid 2px;
     border-radius: .75rem;
+
 }

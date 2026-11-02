@@ -11,17 +11,29 @@
 
   <body>
     <div class="window">
-      <h2>Hotel System Login</h2>
-      <input id="username" placeholder="Username"/>
-      <input id="password" type="password" placeholder="Password"/>
-      <div class="checkbox-container">
-        <input class="show-password-checkbox" type="checkbox" onclick="revealPassword()">
-        <p>Show Password</p>
+      <h2>Вход в Систему Отеля</h2>
+      <div class="inputs-wrapper">
+        <input id="username" placeholder="Username"/>
+        <input id="password" type="password" placeholder="Password"/>
+        <div class="checkbox-container">
+          <input class="show-password-checkbox" type="checkbox"
+                 onclick="revealPassword()">
+          <p>Показать пароль</p>
+        </div>
+      </div>
+      <div class="inputs-wrapper" id="reg-window" style="display: none">
+        <input id="passport-number" type="password" placeholder="Номер паспорта"/>
+        <input id="phone" placeholder="Номер телефона"/>
+        <div class="checkbox-container">
+        <input class="show-password-checkbox" type="checkbox"
+                 onclick="revealPassport()">
+          <p>Показать паспорт</p>
+        </div>
       </div>
       <p class="error-message"></p>
       <div class="button-container">
-        <button onclick="login()">Sign In</button>
-        <button onclick="register()">Register</button>
+        <button onclick="login()">Вход</button>
+        <button onclick="register()">Регистрация</button>
       </div>
     </div>
     <script src="js/login.js"></script>

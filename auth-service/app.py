@@ -103,11 +103,13 @@ def register():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "")
-    passport_number = (data.get("passport_number") or "").strip() or None
-    phone = (data.get("phone") or "").strip() or None
+    passport_number = (data.get("passport") or "").strip()
+    phone = (data.get("phone") or "").strip()
 
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
+    elif not passport_number or not phone:
+        return jsonify({"error": "Passport and phone numbers are required"}), 400
 
     conn = get_db()
     cur = conn.cursor()
