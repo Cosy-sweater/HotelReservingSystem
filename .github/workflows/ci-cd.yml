@@ -32,14 +32,12 @@ jobs:
       - name: Check Python syntax (Flake8)
         run: flake8 auth-service/ backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Check Python dependencies for known vulnerabilities (Point 6 - pip-audit)
-          [cite: 3]
+      - name: Check Python dependencies for known vulnerabilities (Point 6 - pip-audit)[cite: 3]
         run: |
           pip-audit -r auth-service/requirements.txt
           pip-audit -r backend/requirements.txt
 
-      - name: Scan Dockerfiles and configs for security issues (Point 7 - Trivy Config Analysis)
-          [cite: 3]
+      - name: Scan Dockerfiles and configs for security issues (Point 7 - Trivy Config Analysis)[cite: 3]
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'config'
@@ -56,8 +54,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare Git Commit SHA Tag (Point 4)
-          [cite: 3]
+      - name: Prepare Git Commit SHA Tag (Point 4)[cite: 3]
         id: prep
         run: |
           SHA_TAG="${{ github.sha }}"
@@ -70,8 +67,7 @@ jobs:
           docker build -t hotel-backend:${{ github.sha }} ./backend
           docker build -t hotel-gateway:${{ github.sha }} ./gateway
 
-      - name: Scan built images for vulnerabilities with Trivy (Point 5)
-          [cite: 3]
+      - name: Scan built images for vulnerabilities with Trivy (Point 5)[cite: 3]
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'hotel-backend:${{ github.sha }}'
@@ -93,8 +89,7 @@ jobs:
           docker swarm init --advertise-addr $ADVERTISE_IP
           docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
 
-      - name: Wait for Gateway (:8080) & Run Pytest Suite (Points 1 & 2)
-          [cite: 3]
+      - name: Wait for Gateway (:8080) & Run Pytest Suite (Points 1 & 2)[cite: 3]
         run: |
           echo "Waiting for services to boot up..."
           for i in {1..30}; do
