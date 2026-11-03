@@ -3,6 +3,10 @@ input, select {
     min-height: 2.5rem;
 }
 
+button {
+    padding: .7rem;
+}
+
 input:hover, select:hover, button:hover {
     background-color: #96abba;
 }
@@ -189,10 +193,11 @@ header {
 }
 
 .info-tag {
-    background: #f1f5f9;
+    background: #d3d3d3;
     border: 1px solid #e2e8f0;
     color: #334155;
     font-size: 0.78rem;
+    margin-top: 0.4rem;
     padding: 3px 8px;
     border-radius: 5px;
 }

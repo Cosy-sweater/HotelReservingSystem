@@ -112,12 +112,12 @@ async function loadRoom(quick = false) {
                             <h1 style="margin:0;">Номер №${r.room_number} — ${r.room_type} (${r.area_sqm} m²)</h1>
                             <p style="color:#475569;">${r.floor} этаж | ${r.sleeping_places} спальных мест | Вид: ${r.window_view ?? 'Standard'} | ${r.pets_allowed ? 'Можно с питомцами' : 'Без питомцев'}</p>
                         </div>
-                        <div style="font-size:1.5rem; font-weight:800;">$${r.price}<small style="font-size:0.85rem; color:#64748b;">/night</small></div>
+                        <div style="font-size:1.5rem; font-weight:800;">$${r.price}<small style="font-size:0.85rem; color:#64748b;">/ночь</small></div>
                     </div>
                     <div><b>Дополнительные удобства:</b><br/>${tagsHtml}</div>
                     <div class="free-banner ${isFreeRightNow ? 'free-now' : 'free-later'}">
                         ${isFreeRightNow
-            ? `Номер доступна`
+            ? `Номер доступен`
             : `Номер освободится после: <b>${formattedFreeTime}</b>`
         }
                     </div>
@@ -134,7 +134,7 @@ async function loadRoom(quick = false) {
             actionArea.innerHTML = `
                         <div style="background:#f0fdf4; border:1px solid #86efac; padding:14px; border-radius:8px;">
                             <p style="color:#15803d; font-weight:600; margin:0 0 10px 0;">
-                                Комната забронирована для оплаты (${myHold.ttl}с осталось): ${myHold.check_in.slice(0, 16).replace('T', ' ')} &rarr; ${myHold.check_out.slice(0, 16).replace('T', ' ')}
+                                Номер забронирована для оплаты (${myHold.ttl}с осталось): ${myHold.check_in.slice(0, 16).replace('T', ' ')} &rarr; ${myHold.check_out.slice(0, 16).replace('T', ' ')}
                             </p>
                             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                                 <div>

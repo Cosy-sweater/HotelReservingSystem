@@ -164,7 +164,7 @@ function renderRooms() {
 
     const container = document.getElementById("rooms-container");
     if (filtered.length === 0) {
-        container.innerHTML = `<p class="label-no-rooms">Не найдены комнаты по заданным критериям.</p>`;
+        container.innerHTML = `<p class="label-no-rooms">Номера по заданным критериям не найдены.</p>`;
         return;
     }
 
@@ -181,7 +181,7 @@ function renderRooms() {
                 <div class="room-card ${isAvailable ? '' : 'unavailable'}">
                     <div style="flex:1;">
                         <div class="room-header">
-                            <h3 class="room-title">Комната #${r.room_number} — ${r.room_type}</h3>
+                            <h3 class="room-title">Номер №${r.room_number} — ${r.room_type}</h3>
                             <span class="area-badge">${r.area_sqm} м²</span>
                             <span class="status-badge ${r._avail.css}">${r._avail.label}</span>
                         </div>
@@ -204,7 +204,7 @@ function renderRooms() {
                             ${r.free_from ? `Свободна с: ${r.free_from.replace('T', ' ')}` : 'Свободна сейчас'}
                         </small>
                         <span class="rent-btn ${isAvailable ? '' : 'secondary'}">
-                            ${isAvailable ? 'Снять комнату &rarr;' : 'Посмотреть доступные даты &rarr;'}
+                            ${isAvailable ? 'Снять номер &rarr;' : 'Посмотреть доступные даты &rarr;'}
                         </span>
                     </div>
                 </div>
