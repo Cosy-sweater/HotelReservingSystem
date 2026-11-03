@@ -10,103 +10,93 @@
   <body>
     <div class="top-bar">
       <div>
-        <h1 style="margin:0;">Hotel Admin Control Center</h1>
-        <small style="color:#64748b;">Multi-Container Management & CSV Data
-          Suite</small>
+        <h1 style="margin:0;">Панель администратора</h1>
       </div>
       <div class="top-bar-buttons">
         <a href="/">
           <button class="btn-wheat-clr">
-            Guest View
+            На главную
           </button>
         </a>
-        <button class="btn-danger" onclick="logout()">Log Out</button>
+        <button class="btn-danger" onclick="logout()">Выйти</button>
       </div>
     </div>
 
     <div class="tabs-nav">
-      <button class="tab-btn active" onclick="switchTab('tab-rooms', this)">1.
-        Edit Rooms & CSV Mass Sync
+      <button class="tab-btn active" onclick="switchTab('tab-schedule', this)">
+        Бронирование номеров
       </button>
-      <button class="tab-btn" onclick="switchTab('tab-schedule', this)">2.
-        Renting Dates & Availability
+      <button class="tab-btn" onclick="switchTab('tab-rooms', this)">
+        Редактировать данные номеров
       </button>
-      <button class="tab-btn" onclick="switchTab('tab-payments', this)">3.
-        Payment Transactions
+      <button class="tab-btn" onclick="switchTab('tab-payments', this)">
+        История транзакций
       </button>
-      <button class="tab-btn" onclick="switchTab('tab-users', this)">4.
-        Registered Users
+      <button class="tab-btn" onclick="switchTab('tab-users', this)">
+        Список пользователей
       </button>
     </div>
 
     <!-- ==================== TAB 1: EDIT ROOMS & CSV ==================== -->
-    <div id="tab-rooms" class="tab-pane active">
+    <div id="tab-rooms" class="tab-pane">
       <div class="card"
            style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-        <div>
-          <h3 style="margin:0;">Mass Edit Rooms via CSV</h3>
-          <small style="color:#64748b;">Export all rooms to CSV, edit in
-            Excel/Sheets, and import back to update in bulk.</small>
-        </div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <h3 style="margin:0;">Редактировать CSV</h3>
+        <div class="aligned-flex">
           <button class="btn-csv"
                   onclick="window.location.href='/api/admin/export/rooms'">⬇
-            Export Rooms CSV
+            Экспорт в CSV
           </button>
           <input type="file" id="csv_file" accept=".csv"
                  style="width:210px; margin:0;"/>
-          <button class="btn-csv" onclick="importRoomsCSV()">⬆ Import Rooms
+          <button class="btn-csv" onclick="importRoomsCSV()">⬆ Импортировать из
             CSV
           </button>
         </div>
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">Edit Selected Room / Create New <small
-            style="font-weight:normal; color:#64748b;">(Click any row below to
-          populate)</small></h3>
+        <h3 class="card-header">Редактировать / Создать номер</h3>
         <div
-            style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-          <div><label>Room Number *</label><input id="r_num" type="number"
-                                                  placeholder="103"/></div>
-          <div><label>Floor *</label><input id="r_floor" type="number"
-                                            value="1"/></div>
-          <div><label>Room Type *</label><input id="r_type"
-                                                placeholder="Deluxe Double"/>
+            class="grid-table"">
+          <div><label>Номер комнаты *</label><input id="r_num" type="number"
+                                                    placeholder="100"/></div>
+          <div><label>Этаж *</label><input id="r_floor" type="number"
+                                           value="1"/></div>
+          <div><label>Тип комнаты *</label><input id="r_type"
+                                                  placeholder="Де-Люкс"/>
           </div>
-          <div><label>Sleeping Places *</label><input id="r_beds" type="number"
-                                                      value="2"/></div>
-          <div><label>Area (sqm) *</label><input id="r_area" type="number"
-                                                 step="0.1" value="25.0"/></div>
-          <div><label>Price ($/night) *</label><input id="r_price" type="number"
-                                                      value="120"/></div>
-          <div><label>Pets Allowed?</label><select id="r_pets">
-            <option value="false">No</option>
-            <option value="true">Yes</option>
+          <div><label>Спальные места *</label><input id="r_beds" type="number"
+                                                     value="2"/></div>
+          <div><label>Площадь *</label><input id="r_area" type="number"
+                                              step="0.1" value="25.0"/></div>
+          <div><label>Стоимость за ночь *</label><input id="r_price"
+                                                        type="number"
+                                                        value="120"/></div>
+          <div><label>Разрешены животные?</label><select id="r_pets">
+            <option value="false">Нет</option>
+            <option value="true">Да</option>
           </select></div>
-          <div><label>Window View (Nullable)</label><input id="r_view"
-                                                           placeholder="Leave blank for NULL"/>
-          </div>
-          <div><label>Additional Info (comma-sep, Nullable)</label><input
-              id="r_info" placeholder="Wi-Fi, Jacuzzi"/></div>
+          <div><label>Вид из окна</label><input id="r_view"/></div>
+          <div><label>Доп. удобства (через запятую)</label><input
+              id="r_info" placeholder="Wi-Fi, Холодильник"/></div>
         </div>
         <button class="btn-wheat-clr" onclick="saveRoom()"
-                style="margin-top: 12px;">Save / Update Room
+                style="margin-top: 12px;">Сохранить / Обновить номер
         </button>
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">Room Inventory (Click a row to load into
-          editor)</h3>
+        <h3 class="card-header">Список номеров</h3>
         <table>
           <thead>
           <tr>
-            <th>Room</th>
-            <th>Type & Floor</th>
-            <th>Specs</th>
-            <th>Pets & Extra Info</th>
-            <th>Price</th>
-            <th>Availability Status</th>
+            <th>Номер</th>
+            <th>Тип, этаж</th>
+            <th>Характеристики</th>
+            <th>Доп. информация</th>
+            <th>Стоимость</th>
+            <th>Статус</th>
           </tr>
           </thead>
           <tbody id="rooms-edit-table"></tbody>
@@ -115,9 +105,9 @@
     </div>
 
     <!-- ==================== TAB 2: RENTING DATES & STATES ==================== -->
-    <div id="tab-schedule" class="tab-pane">
+    <div id="tab-schedule" class="tab-pane active">
       <div class="card">
-        <h3 style="margin-top:0;">Manual Reservation by Staff</h3>
+        <h3 class="card-header">Ручное бронирование номеров</h3>
         <div
             style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
           <div><label>Room Number *</label><input id="book_room_num"
@@ -132,40 +122,36 @@
                                                 type="datetime-local"/></div>
         </div>
 
-        <div id="new-user-fields"
-             style="display:none; margin-top:12px; padding:12px; background:#fffbeb; border:1px solid #f59e0b; border-radius:6px;">
-          <strong style="color:#b45309;">User not found! Fill details below to
-            register & book:</strong>
-          <div
-              style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top:8px;">
-            <div><label>Password</label><input id="book_pass" type="password"
-                                               value="guest123"/></div>
-            <div><label>Passport Number</label><input id="book_passport"
-                                                      placeholder="AA1234567"/>
+        <div id="new-user-fields" class="new-user-popup">
+          <p style="color:#b45309;">Пользователь не найден. Заполните данные нового пользователя</p>
+          <div class="grid-table">
+            <div><label>Пароль</label><input id="book_pass"
+                                               value="НовыйПользователь"/></div>
+            <div><label>Паспорт</label><input id="book_passport"
+                                                      placeholder="0000-000000"/>
             </div>
             <div><label>Phone</label><input id="book_phone"
-                                            placeholder="+370 600 00000"/></div>
+                                            placeholder="+80000000000"/></div>
           </div>
         </div>
 
-        <button class="btn-wheat-clr" onclick="manualBook(false)">Book Room
+        <button class="btn-wheat-clr" onclick="manualBook(false)">Забронировать номер
         </button>
         <button id="confirm-create-btn" onclick="manualBook(true)"
                 style="display:none; margin-top: 12px; background:#d97706;">
-          Create User & Complete Booking
+          Создать и забронировать номер
         </button>
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">Room Renting Schedule, Payment States &
-          Earliest Free Time</h3>
+        <h3 class="card-header">Выбор номера для бронирования</h3>
         <table>
           <thead>
           <tr>
-            <th>Room</th>
-            <th>Earliest Free From</th>
-            <th>Renting Dates & Payment State (Paid vs Pending Hold)</th>
-            <th>Actions</th>
+            <th>Номер</th>
+            <th>Доступен после</th>
+            <th>Статус бронирования</th>
+            <th>Действия</th>
           </tr>
           </thead>
           <tbody id="schedule-table"></tbody>
@@ -177,23 +163,23 @@
     <div id="tab-payments" class="tab-pane">
       <div class="card">
         <div
-            style="display:flex; justify-content:space-between; align-items:center;">
-          <h3 style="margin:0;">Payment Service Transactions</h3>
+            class="aligned-flex">
+          <h3 style="margin:0;">История транзакций</h3>
           <button class="btn-csv"
                   onclick="window.location.href='/api/admin/export/payments'">⬇
-            Export Payments CSV
+            Экспорт в CSV
           </button>
         </div>
         <table>
           <thead>
           <tr>
-            <th>Transaction ID</th>
-            <th>User</th>
-            <th>Room</th>
-            <th>Amount</th>
-            <th>Provider & Card</th>
-            <th>Status</th>
-            <th>Timestamp</th>
+            <th>ID транзакции</th>
+            <th>Пользователь</th>
+            <th>Номер</th>
+            <th>Стоимость</th>
+            <th>Способ оплаты</th>
+            <th>Статус</th>
+            <th>Время</th>
           </tr>
           </thead>
           <tbody id="payments-table"></tbody>
@@ -206,31 +192,26 @@
       <div class="card">
         <div
             style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-          <div>
-            <h3 style="margin:0;">Registered Users & Rented Rooms</h3>
-            <small style="color:#64748b;">Export users to CSV, edit
-              roles/passport/phone (or add new rows), and import back.</small>
-          </div>
-          <div style="display:flex; gap:10px; align-items:center;">
+          <h3 class="card-header">Registered Users & Rented Rooms</h3>
+          <div class="aligned-flex">
             <button class="btn-csv"
                     onclick="window.location.href='/api/admin/export/users'">⬇
-              Export Users CSV
+              Экспорт в CSV
             </button>
             <input type="file" id="users_csv_file" accept=".csv"
                    style="width:210px; margin:0;"/>
-            <button class="btn-csv" onclick="importUsersCSV()">⬆ Import Users
-              CSV
+            <button class="btn-csv" onclick="importUsersCSV()">⬆ Импорт из CSV
             </button>
           </div>
         </div>
         <table>
           <thead>
           <tr>
-            <th>ID / Username</th>
-            <th>Role</th>
-            <th>Passport Number</th>
-            <th>Phone</th>
-            <th>Active / Upcoming Rented Rooms</th>
+            <th>ID / Имя пользователя</th>
+            <th>Роль</th>
+            <th>Номер паспорта</th>
+            <th>Номер телефона</th>
+            <th>Забронированные номера</th>
           </tr>
           </thead>
           <tbody id="users-table"></tbody>

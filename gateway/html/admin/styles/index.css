@@ -1,5 +1,5 @@
 body {
-    max-width: 1150px;
+    max-width: 1450px;
     margin: 1.5rem auto;
     padding: 20px;
     scroll-behavior: initial;
@@ -22,7 +22,7 @@ body {
 .tabs-nav {
     display: flex;
     gap: 8px;
-    margin-bottom: 1.25rem;
+    margin: 2.25rem 0;
     border-bottom: 2px solid #cbd5e1;
     padding-bottom: 8px;
     flex-wrap: wrap;
@@ -58,6 +58,32 @@ body {
     border-radius: 10px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
     margin-bottom: 20px;
+}
+
+.card-header {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.aligned-flex {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+}
+
+.grid-table {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.new-user-popup {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    background: #fffbeb;
+    border: 1px solid #f59e0b;
+    border-radius: 6px;
 }
 
 input, select {

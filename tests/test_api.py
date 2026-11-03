@@ -65,5 +65,4 @@ def test_room_catalog_and_holding():
                 "check_in": "2026-12-01T14:00",
                 "check_out": "2026-12-03T11:00"
             })
-        assert hold_res.status_code in (200,
-                                        409)
+        assert hold_res.status_code in (200, 409)
