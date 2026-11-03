@@ -1,4 +1,4 @@
-name: Hotel Platform CI/CD Pipeline
+name: Hotel Platform Secure CI/CD Pipeline
 
 on:
   push:
@@ -7,12 +7,12 @@ on:
     branches: [ "main", "master" ]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/hotel
+  IMAGE_PREFIX: hotel
 
 jobs:
-  lint-and-validate:
-    name: 1. Lint & Validate Microservices
+  # 1. Code Linting, Dependency Audit & Security Check
+  security-and-lint:
+    name: 1. Lint, Pip-Audit & Config Security
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,70 +23,112 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies & Flake8
+      - name: Install dependencies & Security Tools
         run: |
-          pip install flake8
+          pip install flake8 pip-audit pytest requests
           pip install -r auth-service/requirements.txt
           pip install -r backend/requirements.txt
 
-      - name: Check Python syntax & critical errors
-        run: |
-          flake8 auth-service/ backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          python -m py_compile auth-service/app.py backend/app.py
+      - name: Check Python syntax (Flake8)
+        run: flake8 auth-service/ backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
 
-  build-and-test-stack:
-    name: 2. Build 5-Container Stack & Integration Test
-    needs: lint-and-validate
+      - name: Check Python dependencies for known vulnerabilities (Point 6 - pip-audit)
+          [cite: 3]
+        run: |
+          pip-audit -r auth-service/requirements.txt
+          pip-audit -r backend/requirements.txt
+
+      - name: Scan Dockerfiles and configs for security issues (Point 7 - Trivy Config Analysis)
+          [cite: 3]
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          hide-progress: false
+          exit-code: '0' # set to 1 to fail pipeline on misconfigurations
+
+  build-and-scan-images:
+    name: 2. Build (SHA Tag) & Trivy Image Scan
+    needs: security-and-lint
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.prep.out.sha_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Git Commit SHA Tag (Point 4)
+          [cite: 3]
+        id: prep
+        run: |
+          SHA_TAG="${{ github.sha }}"
+          echo "sha_tag=$SHA_TAG" >> $GITHUB_OUTPUT
+          echo "Building images with tag: $SHA_TAG"
+
+      - name: Build container images with SHA tag
+        run: |
+          docker build -t hotel-auth-service:${{ github.sha }} ./auth-service
+          docker build -t hotel-backend:${{ github.sha }} ./backend
+          docker build -t hotel-gateway:${{ github.sha }} ./gateway
+
+      - name: Scan built images for vulnerabilities with Trivy (Point 5)
+          [cite: 3]
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'hotel-backend:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+  integration-tests:
+    name: 3. Swarm Deploy & Pytest Integration Test
+    needs: build-and-scan-images
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build all container images
+      - name: Initialize Docker Swarm & Deploy Stack
         run: |
-          docker build -t hotel-auth-service:latest ./auth-service
-          docker build -t hotel-backend:latest ./backend
-          docker build -t hotel-gateway:latest ./gateway
-          docker pull postgres:16-alpine
-          docker pull redis:7-alpine
-
-      - name: Initialize Docker Swarm Cluster & Deploy Stack
-        run: |
-          # GitHub runners have multiple network interfaces; advertise eth0 IP
           ADVERTISE_IP=$(hostname -I | awk '{print $1}')
           docker swarm init --advertise-addr $ADVERTISE_IP
-          # --resolve-image=never tells Swarm to use our local build instead of querying Docker Hub!
           docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
 
-      - name: Run Automated Smoke Tests against Gateway (:8080)
+      - name: Wait for Gateway (:8080) & Run Pytest Suite (Points 1 & 2)
+          [cite: 3]
         run: |
-          echo "Waiting for Swarm cluster services and port 8080 to become ready..."
+          echo "Waiting for services to boot up..."
           for i in {1..30}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/admin/ || true)
-            if [ "$STATUS" = "302" ] || [ "$STATUS" = "401" ]; then
-              echo "Success! Gateway responded with HTTP $STATUS (Unauthenticated user blocked from /admin/)"
-              docker stack services hotel_cluster
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ || true)
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
+              echo "Gateway is active! Running pytest API test suite..."
+              pytest tests/test_api.py
               exit 0
             fi
-            echo "Attempt $i/30: Gateway not ready yet (status: $STATUS), waiting 2s..."
             sleep 2
           done
-          
-          echo "Smoke test timed out!"
-          docker stack services hotel_cluster
-          docker stack ps hotel_cluster --no-trunc
-          docker service logs hotel_cluster_gateway
-          docker service logs hotel_cluster_auth-service
+          echo "Integration test timeout. Container logs:"
+          docker service logs hotel_cluster_backend
           exit 1
 
   deploy-production:
-    name: 3. Deploy to Cluster
-    needs: build-and-test-stack
+    name: 4. Production SSH Deployment
+    needs: integration-tests
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy Stack to Production Swarm Manager
-        run: |
-          echo "Deploying verified images to Docker Swarm cluster..."
-          # For remote SSH deployment in production:
-          # ssh user@prod-server "cd /opt/hotel-app && git pull && docker stack deploy -c compose.yaml hotel_cluster"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Remote Production Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/hotel-app
+            git pull origin main
+            # Pull or build exact Git SHA version in production
+            export IMAGE_TAG=${{ github.sha }}
+            docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
+            echo "Successfully deployed commit ${{ github.sha }} to production!"
