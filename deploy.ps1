@@ -1,5 +1,4 @@
-# deploy.ps1 - One-Click Cluster Build & Deployment
-Write-Host "=== [0/4] Stopping any conflicting 'docker compose' containers ===" -ForegroundColor Yellow
+Write-Host "=== [0/4] Stopping any conflicting containers ===" -ForegroundColor Yellow
 docker compose down --remove-orphans 2>$null
 
 Write-Host "=== [1/4] Building Microservice Docker Images ===" -ForegroundColor Cyan
@@ -15,7 +14,7 @@ if ($swarmStatus -ne "active") {
     Write-Host "Swarm cluster is already active." -ForegroundColor Green
 }
 
-Write-Host "=== [3/4] Deploying 5-Service Stack with Network Isolation ===" -ForegroundColor Cyan
+Write-Host "=== [3/4] Deploying Service Stack ===" -ForegroundColor Cyan
 docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
 
 Write-Host "=== [4/4] Waiting for Cluster Replicas to Start ===" -ForegroundColor Cyan

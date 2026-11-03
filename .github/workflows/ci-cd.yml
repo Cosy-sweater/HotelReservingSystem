@@ -11,7 +11,6 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/hotel
 
 jobs:
-  # STAGE 1: Continuous Integration (Static Analysis & Syntax Check)
   lint-and-validate:
     name: 1. Lint & Validate Microservices
     runs-on: ubuntu-latest
@@ -35,7 +34,6 @@ jobs:
           flake8 auth-service/ backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
           python -m py_compile auth-service/app.py backend/app.py
 
-  # STAGE 2: Build & Push Container Images
   build-and-test-stack:
     name: 2. Build 5-Container Stack & Integration Test
     needs: lint-and-validate
@@ -66,7 +64,7 @@ jobs:
           for i in {1..30}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/admin/ || true)
             if [ "$STATUS" = "302" ] || [ "$STATUS" = "401" ]; then
-              echo "✅ Success! Gateway responded with HTTP $STATUS (Unauthenticated user blocked from /admin/)"
+              echo "Success! Gateway responded with HTTP $STATUS (Unauthenticated user blocked from /admin/)"
               docker stack services hotel_cluster
               exit 0
             fi
@@ -74,14 +72,13 @@ jobs:
             sleep 2
           done
           
-          echo "❌ Smoke test timed out! Printing cluster diagnostics:"
+          echo "Smoke test timed out!"
           docker stack services hotel_cluster
           docker stack ps hotel_cluster --no-trunc
           docker service logs hotel_cluster_gateway
           docker service logs hotel_cluster_auth-service
           exit 1
 
-  # STAGE 3: Continuous Deployment (Production Server via SSH)
   deploy-production:
     name: 3. Deploy to Cluster
     needs: build-and-test-stack
