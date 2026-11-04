@@ -110,6 +110,15 @@ jobs:
               hotel-${service}:${IMAGE_TAG}
           done
 
+      - name: Initialize Swarm and Deploy Stack
+        run: |
+          ADVERTISE_IP=$(hostname -I | awk '{print $1}')
+          docker swarm init --advertise-addr "$ADVERTISE_IP"
+          export POSTGRES_PASSWORD=$(openssl rand -hex 24)
+          export ADMIN_INITIAL_PASSWORD=$(openssl rand -hex 16)
+          echo "ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD}" >> $GITHUB_ENV
+          docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
+
       - name: Deploy Stack to Docker Swarm
         run: |
           ADVERTISE_IP=$(hostname -I | awk '{print $1}')
@@ -203,5 +212,4 @@ jobs:
                 ./${service}
             done
             docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
-            # Очищаем старые неиспользуемые образы, чтобы не забить диск сервера
             docker image prune -f
