@@ -63,7 +63,7 @@ jobs:
           pip-audit -r backend/requirements.txt || true
 
       - name: Run Trivy configuration scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
           hide-progress: true
