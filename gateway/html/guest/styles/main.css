@@ -28,7 +28,7 @@ header {
     display: flex;
     padding: .5rem 1rem;
     align-items: center;
-    gap: 4rem;
+    gap: 2rem;
 }
 
 .logout-button {

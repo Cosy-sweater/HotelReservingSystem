@@ -1,26 +1,51 @@
+x-app-env: &app-env
+  DB_HOST: db
+  POSTGRES_USER: ${POSTGRES_USER:-hotel_admin}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secretpassword}
+  POSTGRES_DB: ${POSTGRES_DB:-hotel_db}
+  REDIS_HOST: redis
+
+x-deploy-policy: &deploy-policy
+  update_config:
+    parallelism: 1
+    delay: 5s
+    order: start-first
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+    max_attempts: 3
+
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: hotel_admin
-      POSTGRES_PASSWORD: secretpassword
-      POSTGRES_DB: hotel_db
+      POSTGRES_USER: ${POSTGRES_USER:-hotel_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secretpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-hotel_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hotel_admin -d hotel_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hotel_admin} -d $${POSTGRES_DB:-hotel_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
     deploy:
       replicas: 1
       placement:
         constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
     networks:
       - backend-net
     healthcheck:
@@ -30,18 +55,16 @@ services:
       retries: 5
     deploy:
       replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
 
   auth-service:
-    image: hotel-auth-service:latest
+    image: hotel-auth-service:${IMAGE_TAG:-latest}
     build: ./auth-service
     environment:
-      DB_HOST: db
-      POSTGRES_USER: hotel_admin
-      POSTGRES_PASSWORD: secretpassword
-      POSTGRES_DB: hotel_db
-      REDIS_HOST: redis
-    volumes:
-      - ./auth-service:/app
+      <<: *app-env
     networks:
       - frontend-net
       - backend-net
@@ -49,24 +72,18 @@ services:
       - db
       - redis
     deploy:
+      <<: *deploy-policy
       replicas: 2
-      update_config:
-        parallelism: 1
-        delay: 5s
-      restart_policy:
-        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
 
   backend:
-    image: hotel-backend:latest
+    image: hotel-backend:${IMAGE_TAG:-latest}
     build: ./backend
     environment:
-      DB_HOST: db
-      POSTGRES_USER: hotel_admin
-      POSTGRES_PASSWORD: secretpassword
-      POSTGRES_DB: hotel_db
-      REDIS_HOST: redis
-    volumes:
-      - ./backend:/app
+      <<: *app-env
     networks:
       - frontend-net
       - backend-net
@@ -74,15 +91,15 @@ services:
       - db
       - redis
     deploy:
+      <<: *deploy-policy
       replicas: 3
-      update_config:
-        parallelism: 1
-        delay: 5s
-      restart_policy:
-        condition: on-failure
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
   gateway:
-    image: hotel-gateway:latest
+    image: hotel-gateway:${IMAGE_TAG:-latest}
     build: ./gateway
     ports:
       - "8080:80"
@@ -95,14 +112,17 @@ services:
       - auth-service
       - backend
     deploy:
+      <<: *deploy-policy
       replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
 networks:
-  # Public-facing internal cluster network (Gateway <-> Microservices)
   frontend-net:
     driver: overlay
     attachable: true
-  # Strictly isolated data network (Microservices <-> DB/Redis; Gateway cannot access)
   backend-net:
     driver: overlay
     internal: true
@@ -110,3 +130,4 @@ networks:
 
 volumes:
   pgdata:
+  redisdata:

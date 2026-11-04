@@ -32,7 +32,7 @@ def get_db():
                 host=os.environ.get("DB_HOST", "db"),
                 database=os.environ.get("POSTGRES_DB", "hotel_db"),
                 user=os.environ.get("POSTGRES_USER", "hotel_admin"),
-                password=os.environ.get("POSTGRES_PASSWORD", "secretpassword")
+                password=os.environ.get("POSTGRES_PASSWORD", "db_secret_password")
             )
         except psycopg2.OperationalError:
             print(f"Waiting for PostgreSQL... ({attempt + 1}/15)")
