@@ -201,7 +201,7 @@ function renderRooms() {
                     <div class="room-action">
                         <div class="price-box">$${r.price} <span>/ ночь</span></div>
                         <small style="color: #64748b; display: block; margin-bottom: 4px;">
-                            ${r.free_from ? `Свободна с: ${r.free_from.replace('T', ' ')}` : 'Свободна сейчас'}
+                            ${r.free_from ? `Свободен с: ${r.free_from.replace('T', ' ')}` : 'Свободен сейчас'}
                         </small>
                         <span class="rent-btn ${isAvailable ? '' : 'secondary'}">
                             ${isAvailable ? 'Снять номер &rarr;' : 'Посмотреть доступные даты &rarr;'}

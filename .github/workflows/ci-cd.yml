@@ -127,7 +127,6 @@ jobs:
           export POSTGRES_DB="hotel_db"
           export POSTGRES_PASSWORD=$(openssl rand -hex 24)
           export ADMIN_INITIAL_PASSWORD=$(openssl rand -hex 16)
-          # Сохраняем пароль админа в переменную окружения для Pytest
           echo "ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD}" >> $GITHUB_ENV
           docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
 
