@@ -21,7 +21,6 @@ cache = redis.Redis(
     decode_responses=True
 )
 
-# Configurable background state-sync interval in seconds (Default: 300s = 5 minutes)
 SYNC_INTERVAL_SECONDS = int(os.environ.get("SYNC_INTERVAL_SECONDS", 300))
 
 
@@ -32,7 +31,8 @@ def get_db():
                 host=os.environ.get("DB_HOST", "db"),
                 database=os.environ.get("POSTGRES_DB", "hotel_db"),
                 user=os.environ.get("POSTGRES_USER", "hotel_admin"),
-                password=os.environ.get("POSTGRES_PASSWORD", "db_secret_password")
+                password=os.environ.get("POSTGRES_PASSWORD",
+                                        "db_secret_password")
             )
         except psycopg2.OperationalError:
             print(f"Waiting for PostgreSQL... ({attempt + 1}/15)")
@@ -110,21 +110,27 @@ def require_auth(required_role=None):
         @wraps(f)
         def wrapper(*args, **kwargs):
             session_id = request.cookies.get("session_id")
-            session_data = cache.hgetall(f"session:{session_id}") if session_id else None
+            session_data = cache.hgetall(
+                f"session:{session_id}") if session_id else None
             if not session_data:
                 return jsonify({"error": "Unauthorized"}), 401
             if required_role and session_data.get("role") != required_role:
-                return jsonify({"error": "Forbidden: Admin privileges required"}), 403
+                return jsonify(
+                    {"error": "Forbidden: Admin privileges required"}), 403
             request.current_user = session_data
             return f(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
 def parse_iso_dt(dt_str):
     if not dt_str:
         return None
-    return datetime.fromisoformat(dt_str.replace("Z", "")).replace(minute=0, second=0, microsecond=0)
+    return datetime.fromisoformat(dt_str.replace("Z", "")).replace(minute=0,
+                                                                   second=0,
+                                                                   microsecond=0)
 
 
 def sync_reservation_states(cur, force=False):
@@ -136,7 +142,8 @@ def sync_reservation_states(cur, force=False):
     if force:
         cache.set("sync:reservations:cooldown", "1", ex=SYNC_INTERVAL_SECONDS)
     else:
-        if not cache.set("sync:reservations:cooldown", "1", nx=True, ex=SYNC_INTERVAL_SECONDS):
+        if not cache.set("sync:reservations:cooldown", "1", nx=True,
+                         ex=SYNC_INTERVAL_SECONDS):
             return False
 
     cur.execute("""
@@ -252,7 +259,6 @@ def compute_free_from(reservations, holds):
     return free_at.strftime("%Y-%m-%dT%H:%M")
 
 
-# --- ROOMS ENDPOINT ---
 @app.route("/api/rooms", methods=["GET"])
 @require_auth()
 def get_rooms():
@@ -300,7 +306,8 @@ def get_rooms():
             "room_type": r["room_type"],
             "sleeping_places": r["sleeping_places"],
             "pets_allowed": r["pets_allowed"],
-            "area_sqm": float(r["area_sqm"]) if r["area_sqm"] is not None else 0.0,
+            "area_sqm": float(r["area_sqm"]) if r[
+                                                    "area_sqm"] is not None else 0.0,
             "window_view": r["window_view"],
             "price": r["price"],
             "additional_info": r["additional_info"],
@@ -314,7 +321,6 @@ def get_rooms():
     return jsonify(result)
 
 
-# --- HOLD ROOM ---
 @app.route("/api/hold/<int:room_num>", methods=["POST"])
 @require_auth()
 def hold_room(room_num):
@@ -325,25 +331,31 @@ def hold_room(room_num):
 
     try:
         req_in = parse_iso_dt(check_in_str) if check_in_str else datetime.now()
-        req_out = parse_iso_dt(check_out_str) if check_out_str else req_in + timedelta(days=1)
+        req_out = parse_iso_dt(
+            check_out_str) if check_out_str else req_in + timedelta(days=1)
     except ValueError:
-        return jsonify({"available": False, "error": "Invalid ISO datetime format. Use YYYY-MM-DDTHH:MM"}), 400
+        return jsonify({"available": False,
+                        "error": "Invalid ISO datetime format. Use YYYY-MM-DDTHH:MM"}), 400
 
     if req_out <= req_in:
-        return jsonify({"available": False, "error": "Check-out time must be after check-in time."}), 400
+        return jsonify({"available": False,
+                        "error": "Check-out time must be after check-in time."}), 400
 
     conn = get_db()
     cur = conn.cursor()
     if sync_reservation_states(cur, force=False):
         conn.commit()
 
-    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;", (room_num,))
+    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;",
+                (room_num,))
     if not cur.fetchone():
         cur.close()
         conn.close()
-        return jsonify({"available": False, "error": f"Room {room_num} does not exist."}), 404
+        return jsonify({"available": False,
+                        "error": f"Room {room_num} does not exist."}), 404
 
-    conflicts = check_timeframe_conflicts(cur, room_num, req_in, req_out, ignore_user=user)
+    conflicts = check_timeframe_conflicts(cur, room_num, req_in, req_out,
+                                          ignore_user=user)
     cur.close()
     conn.close()
 
@@ -372,14 +384,14 @@ def hold_room(room_num):
     })
 
 
-# --- PAY & CONVERT HOLD TO RESERVATION (IMMEDIATE DB SYNC) ---
 @app.route("/api/pay/<int:room_num>", methods=["POST"])
 @require_auth()
 def pay_and_book(room_num):
     user = request.current_user["username"]
     hold_raw = cache.get(f"hold:room:{room_num}:{user}")
     if not hold_raw:
-        return jsonify({"error": "Your checkout hold expired or does not exist."}), 403
+        return jsonify(
+            {"error": "Your checkout hold expired or does not exist."}), 403
 
     data = request.json if request.is_json else {}
     provider = data.get("provider", "Stripe")
@@ -414,9 +426,9 @@ def pay_and_book(room_num):
     cur.execute("""
         INSERT INTO payments (transaction_id, reservation_id, username, room_number, amount, provider, card_last4, status)
         VALUES (%s, %s, %s, %s, %s, %s, %s, 'succeeded');
-    """, (transaction_id, res_id, user, room_num, total_amount, provider, card_last4))
+    """, (transaction_id, res_id, user, room_num, total_amount, provider,
+          card_last4))
 
-    # Immediate update of affected room & reservation states
     sync_reservation_states(cur, force=True)
     conn.commit()
     cur.close()
@@ -435,7 +447,6 @@ def pay_and_book(room_num):
     })
 
 
-# --- USER PROFILE & RENTED ROOMS ---
 @app.route("/api/users/<string:username>", methods=["GET"])
 @require_auth()
 def get_user_profile_and_rooms(username):
@@ -514,7 +525,6 @@ def list_all_users():
     return jsonify(users)
 
 
-# --- ADMIN ROOM CREATE / UPDATE ---
 @app.route("/api/admin/rooms", methods=["POST"])
 @require_auth(required_role="admin")
 def create_or_update_room():
@@ -531,7 +541,8 @@ def create_or_update_room():
     price = data.get("price", 100)
 
     raw_view = data.get("window_view")
-    window_view = raw_view.strip() if isinstance(raw_view, str) and raw_view.strip() else None
+    window_view = raw_view.strip() if isinstance(raw_view,
+                                                 str) and raw_view.strip() else None
 
     raw_info = data.get("additional_info")
     if isinstance(raw_info, list):
@@ -554,14 +565,14 @@ def create_or_update_room():
             window_view = EXCLUDED.window_view,
             price = EXCLUDED.price,
             additional_info = EXCLUDED.additional_info;
-    """, (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info))
+    """, (room_number, floor, room_type, sleeping_places, pets_allowed,
+          area_sqm, window_view, price, additional_info))
     conn.commit()
     cur.close()
     conn.close()
     return jsonify({"message": f"Room {room_number} saved successfully!"})
 
 
-# --- ADMIN MANUAL BOOKING (IMMEDIATE DB SYNC) ---
 @app.route("/api/admin/book", methods=["POST"])
 @require_auth(required_role="admin")
 def admin_create_reservation():
@@ -573,22 +584,27 @@ def admin_create_reservation():
     check_out_str = data.get("check_out")
 
     if not room_number or not target_user:
-        return jsonify({"code": "MISSING_FIELDS", "error": "room_number and username are required."}), 400
+        return jsonify({"code": "MISSING_FIELDS",
+                        "error": "room_number and username are required."}), 400
 
     try:
         req_in = parse_iso_dt(check_in_str) if check_in_str else datetime.now()
-        req_out = parse_iso_dt(check_out_str) if check_out_str else req_in + timedelta(days=1)
+        req_out = parse_iso_dt(
+            check_out_str) if check_out_str else req_in + timedelta(days=1)
     except ValueError:
-        return jsonify({"code": "INVALID_DATES", "error": "Invalid date format. Use YYYY-MM-DDTHH:MM."}), 400
+        return jsonify({"code": "INVALID_DATES",
+                        "error": "Invalid date format. Use YYYY-MM-DDTHH:MM."}), 400
 
     if req_out <= req_in:
-        return jsonify({"code": "INVALID_DATES", "error": "Check-out must be after check-in."}), 400
+        return jsonify({"code": "INVALID_DATES",
+                        "error": "Check-out must be after check-in."}), 400
 
     conn = get_db()
     cur = conn.cursor()
     sync_reservation_states(cur, force=True)
 
-    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;", (room_number,))
+    cur.execute("SELECT room_number FROM rooms WHERE room_number = %s;",
+                (room_number,))
     if not cur.fetchone():
         cur.close()
         conn.close()
@@ -597,7 +613,8 @@ def admin_create_reservation():
             "error": f"Room #{room_number} does not exist in the database. Create the room first."
         }), 404
 
-    cur.execute("SELECT username FROM users WHERE username = %s;", (target_user,))
+    cur.execute("SELECT username FROM users WHERE username = %s;",
+                (target_user,))
     if not cur.fetchone():
         if not create_new_user:
             cur.close()
@@ -615,7 +632,8 @@ def admin_create_reservation():
         cur.execute("""
             INSERT INTO users (username, password_hash, role, passport_number, phone)
             VALUES (%s, %s, 'user', %s, %s);
-        """, (target_user, generate_password_hash(new_password), passport, phone))
+        """, (target_user, generate_password_hash(new_password), passport,
+              phone))
     else:
         passport = (data.get("passport_number") or "").strip()
         phone = (data.get("phone") or "").strip()
@@ -661,7 +679,6 @@ def admin_create_reservation():
     })
 
 
-# --- CANCEL RESERVATION (IMMEDIATE DB SYNC) ---
 @app.route("/api/admin/cancel/<int:room_num>", methods=["POST"])
 @require_auth(required_role="admin")
 def admin_cancel_reservation(room_num):
@@ -689,10 +706,10 @@ def admin_cancel_reservation(room_num):
     for key in cache.scan_iter(f"hold:room:{room_num}:*"):
         cache.delete(key)
 
-    return jsonify({"message": f"Reservation(s) for Room #{room_num} cancelled."})
+    return jsonify(
+        {"message": f"Reservation(s) for Room #{room_num} cancelled."})
 
 
-# --- PAYMENTS & CSV IMPORT/EXPORT ENDPOINTS ---
 @app.route("/api/admin/payments", methods=["GET"])
 @require_auth(required_role="admin")
 def get_all_payments():
@@ -772,14 +789,16 @@ def import_rooms_csv():
             floor = int(row.get("floor") or 1)
             room_type = (row.get("room_type") or "Standard").strip()
             sleeping_places = int(row.get("sleeping_places") or 2)
-            pets_allowed = str(row.get("pets_allowed", "")).strip().lower() in ("true", "1", "yes")
+            pets_allowed = str(row.get("pets_allowed", "")).strip().lower() in (
+                "true", "1", "yes")
             area_sqm = float(row.get("area_sqm") or 25.0)
             window_view = (row.get("window_view") or "").strip() or None
             price = int(float(row.get("price") or 100))
 
             raw_info = (row.get("additional_info") or "").strip()
             sep = "|" if "|" in raw_info else ","
-            info_list = [x.strip() for x in raw_info.split(sep) if x.strip()] if raw_info else None
+            info_list = [x.strip() for x in raw_info.split(sep) if
+                         x.strip()] if raw_info else None
 
             cur.execute("""
                 INSERT INTO rooms (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info)
@@ -793,7 +812,8 @@ def import_rooms_csv():
                     window_view = EXCLUDED.window_view,
                     price = EXCLUDED.price,
                     additional_info = EXCLUDED.additional_info;
-            """, (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, info_list))
+            """, (room_number, floor, room_type, sleeping_places, pets_allowed,
+                  area_sqm, window_view, price, info_list))
             count += 1
 
         conn.commit()
@@ -804,7 +824,8 @@ def import_rooms_csv():
         cur.close()
         conn.close()
 
-    return jsonify({"message": f"Successfully imported/updated {count} rooms from CSV!"})
+    return jsonify(
+        {"message": f"Successfully imported/updated {count} rooms from CSV!"})
 
 
 @app.route("/api/admin/export/payments", methods=["GET"])
@@ -828,12 +849,15 @@ def export_payments_csv():
         "amount", "currency", "provider", "card_last4", "status", "paid_at"
     ])
     for r in rows:
-        writer.writerow([r[0], r[1], r[2], r[3], float(r[4]), r[5], r[6], r[7], r[8], r[9].isoformat()])
+        writer.writerow(
+            [r[0], r[1], r[2], r[3], float(r[4]), r[5], r[6], r[7], r[8],
+             r[9].isoformat()])
 
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=payments_export.csv"}
+        headers={
+            "Content-Disposition": "attachment; filename=payments_export.csv"}
     )
 
 
@@ -856,7 +880,8 @@ def export_users_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["id", "username", "role", "passport_number", "phone", "active_bookings"])
+    writer.writerow(["id", "username", "role", "passport_number", "phone",
+                     "active_bookings"])
     for r in rows:
         writer.writerow([r[0], r[1], r[2], r[3] or "", r[4] or "", r[5]])
 
@@ -893,7 +918,8 @@ def import_users_csv():
             passport = (row.get("passport_number") or "").strip() or None
             phone = (row.get("phone") or "").strip() or None
             raw_password = (row.get("password") or "").strip()
-            default_hash = generate_password_hash(raw_password if raw_password else "guest123")
+            default_hash = generate_password_hash(
+                raw_password if raw_password else "guest123")
 
             if raw_password:
                 cur.execute("""
@@ -925,7 +951,8 @@ def import_users_csv():
         cur.close()
         conn.close()
 
-    return jsonify({"message": f"Successfully imported/updated {count} users from CSV!"})
+    return jsonify(
+        {"message": f"Successfully imported/updated {count} users from CSV!"})
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ try {
 $env:IMAGE_TAG = $ImageTag
 Write-Host "Используется тег сборки IMAGE_TAG: $ImageTag" -ForegroundColor Gray
 
-docker compose down --remove-orphans *>&1 | Out-Null
+docker compose down --remove-orphans
 
 
 Write-Host "`n=== [1/5] Building Microservice Docker Images ===" -ForegroundColor Cyan

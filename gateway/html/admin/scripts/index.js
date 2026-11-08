@@ -43,7 +43,7 @@ function setDefaultBookingDates() {
     outEl.onchange = enforce;
 }
 
-async function loadAdminRooms(quick = false) {
+async function loadRooms(quick = false) {
     try {
         const res = await fetch(`/api/rooms`);
         if (res.status === 401) {
@@ -160,7 +160,7 @@ async function importRoomsCSV() {
     const data = await res.json();
     alert(data.message || data.error);
     fileInput.value = "";
-    loadAdminRooms(false);
+    loadRooms(false);
 }
 
 async function importUsersCSV() {
@@ -243,7 +243,7 @@ async function saveRoom() {
     });
     const data = await res.json();
     alert(data.message || data.error);
-    loadAdminRooms(false);
+    loadRooms(false);
 }
 
 async function manualBook(createNewUser = false) {
@@ -277,7 +277,7 @@ async function manualBook(createNewUser = false) {
     alert(data.message);
     document.getElementById("new-user-fields").style.display = "none";
     document.getElementById("confirm-create-btn").style.display = "none";
-    loadAdminRooms(false);
+    loadRooms(false);
 }
 
 async function cancelReservation(roomNum) {
@@ -288,7 +288,7 @@ async function cancelReservation(roomNum) {
     });
     const data = await res.json();
     alert(data.message || data.error);
-    loadAdminRooms(false);
+    loadRooms(false);
 }
 
 async function logout() {
@@ -297,5 +297,5 @@ async function logout() {
 }
 
 setDefaultBookingDates();
-loadAdminRooms(false);
-setInterval(() => loadAdminRooms(true), 4000);
+loadRooms(false);
+setInterval(() => loadRooms(true), 4000);

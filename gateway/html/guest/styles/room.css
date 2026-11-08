@@ -94,3 +94,13 @@ button.pay-btn:hover {
     gap: 12px;
     margin-bottom: 15px;
 }
+
+.conflict-box {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    background: #fef2f2;
+    border: 1px solid #f87171;
+    border-radius: 6px;
+    color: #991b1b;
+}

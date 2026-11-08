@@ -76,12 +76,11 @@ def login():
                mapping={"username": user[0], "role": user[2]})
     cache.expire(f"session:{session_id}", 86400)
 
-    # Return role so login page knows where to redirect, but keep session_id in an HttpOnly cookie!
     resp = make_response(jsonify({"username": user[0], "role": user[2]}))
     resp.set_cookie(
         "session_id",
         session_id,
-        httponly=True,  # Invisible to JavaScript (document.cookie)!
+        httponly=True,
         samesite="Lax",
         path="/"
     )
@@ -147,7 +146,6 @@ def me():
     return jsonify(user)
 
 
-# --- INTERNAL NGINX GATEKEEPER ENDPOINTS ---
 @app.route("/auth/verify-user", methods=["GET"])
 def verify_user():
     session_id = request.cookies.get("session_id")
@@ -164,7 +162,7 @@ def verify_admin():
     if not user:
         return "", 401
     if user.get("role") != "admin":
-        return "", 403  # Logged in, but NOT an admin!
+        return "", 403
     return "", 200
 
 

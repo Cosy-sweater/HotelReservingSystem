@@ -17,7 +17,6 @@ async function login() {
     });
     const data = await res.json();
     if (res.ok) {
-        // Server already set the HttpOnly cookie! Redirect based on role:
         window.location.href = data.role === "admin" ? "/admin" : "/";
     } else {
         error_message.textContent = data.error;
@@ -41,7 +40,6 @@ async function register() {
     });
     const data = await res.json();
     if (res.ok) {
-        // Cookie is already set by /auth/register — go straight to Guest Portal!
         window.location.href = "/";
     } else {
         error_message.textContent = data.error;

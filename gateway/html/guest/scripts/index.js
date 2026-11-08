@@ -8,10 +8,10 @@ const toLocalHourISO = (date) => {
     return local.toISOString().slice(0, 13) + ":00";
 };
 
-// Set default filter timeframe: Now -> Tomorrow (hourly snapped)
+// Set default filter timeframe: Now -> Tomorrow
 function setDefaultDates() {
     const now = new Date();
-    const tomorrow = new Date(now.getTime() + 86400000); // Default check-out: +1 day
+    const tomorrow = new Date(now.getTime() + 86400000);
 
     const maxDate = new Date(now);
     maxDate.setFullYear(maxDate.getFullYear() + 1);
@@ -151,7 +151,6 @@ function renderRooms() {
             return true;
         });
 
-    // Fixed syntax for sorting operators
     filtered.sort((a, b) => {
         if (a._avail.rank !== b._avail.rank) {
             return a._avail.rank - b._avail.rank;
