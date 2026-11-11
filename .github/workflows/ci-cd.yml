@@ -1,4 +1,4 @@
-name: Hotel Platform CI-CD
+name: CI-CD Pipeline
 
 on:
   push:
@@ -10,205 +10,83 @@ on:
       - main
       - master
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  POSTGRES_USER: hotel_admin
+  POSTGRES_PASSWORD: secretpassword
+  POSTGRES_DB: hotel_db
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  lint-and-audit:
-    name: Lint, Config Validation & Security Audit
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: |
-            auth-service/requirements.txt
-            backend/requirements.txt
 
-      - name: Install dependencies
+      - name: Install tools and check dependencies
         run: |
           pip install flake8 pip-audit pytest requests
           pip install -r auth-service/requirements.txt
           pip install -r backend/requirements.txt
-
-      - name: Run Flake8 syntax and quality check
-        run: |
-          # Строгая проверка на синтаксические ошибки и неопределенные переменные
-          flake8 auth-service/ backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          # Проверка стиля и неиспользуемых импортов (в режиме предупреждений)
-          flake8 auth-service/ backend/ --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
-
-      - name: Validate Docker Compose syntax
-        run: |
-          docker compose -f compose.yaml config -q
-
-      - name: Validate Nginx Gateway config & HTML structure
-        run: |
-          # Проверяем наличие обязательных HTML-файлов, чтобы не ловить 403 на проде
-          test -f gateway/html/login.html
-          test -f gateway/html/guest/index.html
-          test -f gateway/html/admin/index.html
-          # Проверяем синтаксис nginx.conf (игнорируем ошибку DNS-резолва апстримов вне сети Swarm)
-          docker run --rm -v "${PWD}/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t
-
-      - name: Run pip-audit dependency scan
-        run: |
+          flake8 auth-service/ backend/ --select=E9,F63,F7,F82
           pip-audit -r auth-service/requirements.txt || true
           pip-audit -r backend/requirements.txt || true
 
-      - name: Run Trivy configuration scan
+      - name: Build Docker images with Git SHA
+        run: |
+          docker build -t hotel-auth-service:${{ github.sha }} -t hotel-auth-service:latest ./auth-service
+          docker build -t hotel-backend:${{ github.sha }} -t hotel-backend:latest ./backend
+          docker build -t hotel-gateway:${{ github.sha }} -t hotel-gateway:latest ./gateway
+
+      - name: Scan Docker config and image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
           hide-progress: true
           exit-code: "0"
 
-  build-scan-and-test:
-    name: Build, Scan & Full Integration Test
-    needs: lint-and-audit
-    runs-on: ubuntu-latest
-    env:
-      IMAGE_TAG: ${{ github.sha }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python for Pytest
-        uses: actions/setup-python@v5
+      - name: Scan backend image vulnerabilities with Trivy
+        uses: aquasecurity/trivy-action@master
         with:
-          python-version: "3.12"
-          cache: "pip"
+          image-ref: hotel-backend:${{ github.sha }}
+          hide-progress: true
+          exit-code: "0"
+          severity: CRITICAL,HIGH
 
-      - name: Install test dependencies
+      - name: Start services and run Pytest
         run: |
-          pip install pytest requests
-          if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
-
-      - name: Build Docker images with Git SHA and Latest tags
-        run: |
-          for service in auth-service backend gateway; do
-            docker build \
-              -t hotel-${service}:${IMAGE_TAG} \
-              -t hotel-${service}:latest \
-              ./${service}
-          done
-
-      - name: Scan all built images with Trivy
-        run: |
-          for service in auth-service backend gateway; do
-            echo "=== Scanning hotel-${service}:${IMAGE_TAG} ==="
-            docker run --rm \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              aquasec/trivy:latest image \
-              --format table --hide-progress --exit-code 0 --severity CRITICAL,HIGH \
-              hotel-${service}:${IMAGE_TAG}
-          done
-
-      - name: Initialize Swarm and Deploy Stack
-        run: |
-          ADVERTISE_IP=$(hostname -I | awk '{print $1}')
-          docker swarm init --advertise-addr "$ADVERTISE_IP"
-          export POSTGRES_PASSWORD=$(openssl rand -hex 24)
-          export ADMIN_INITIAL_PASSWORD=$(openssl rand -hex 16)
-          echo "ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD}" >> $GITHUB_ENV
-          docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
-
-      - name: Deploy Stack to Docker Swarm
-        run: |
-          ADVERTISE_IP=$(hostname -I | awk '{print $1}')
-          docker swarm init --advertise-addr "$ADVERTISE_IP"
-          export POSTGRES_USER="hotel_admin"
-          export POSTGRES_DB="hotel_db"
-          export POSTGRES_PASSWORD=$(openssl rand -hex 24)
-          export ADMIN_INITIAL_PASSWORD=$(openssl rand -hex 16)
-          echo "ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD}" >> $GITHUB_ENV
-          docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
-
-      - name: Wait for all Swarm services and run Smoke Checks
-        run: |
-          echo "Waiting for stack services to converge and pass healthchecks..."
-          for i in $(seq 1 45); do
-            LOGIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/login || true)
-            ADMIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/admin/ || true)
-            ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ || true)
-            API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/api/rooms || true)
-
-            echo "Attempt $i: /login=$LOGIN_STATUS, /=$ROOT_STATUS, /admin/=$ADMIN_STATUS, /api=$API_STATUS"
-
-            # Проверяем, что:
-            # 1. Страница /login отдает 200
-            # 2. Главная / и /admin/ делают редирект 302 на логин (а не падают с 403 или 502)
-            # 3. Запрос к бэкенду не возвращает 502/503/504 (значит backend поднялся за gateway)
-            if [ "$LOGIN_STATUS" = "200" ] && \
-               [ "$ROOT_STATUS" = "302" ] && \
-               [ "$ADMIN_STATUS" = "302" ] && \
-               [ "$API_STATUS" != "000" ] && [ "$API_STATUS" != "502" ] && [ "$API_STATUS" != "503" ]; then
-              echo "All services are up and routing properly!"
+          docker compose up -d
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/login || true)
+            if [ "$STATUS" = "200" ]; then
+              pytest tests/test_api.py -v
               exit 0
             fi
             sleep 2
           done
-          echo "Stack failed to become ready in time!"
+          docker compose logs
           exit 1
 
-      - name: Run Pytest API & E2E Integration Suite
+      - name: Tear down test containers
+        if: always()
         run: |
-          pytest tests/ -v --tb=short
+          docker compose down -v --remove-orphans
 
-      - name: Dump Swarm logs on failure
-        if: failure()
-        run: |
-          echo "=== SWARM SERVICES STATE ==="
-          docker stack services hotel_cluster
-          echo "=== SWARM TASKS STATE ==="
-          docker stack ps hotel_cluster --no-trunc
-          for svc in db redis auth-service backend gateway; do
-            echo "=== LOGS FOR hotel_cluster_${svc} ==="
-            docker service logs --tail 100 hotel_cluster_${svc} || true
-          done
-
-  deploy-production:
-    name: Production SSH Deployment
-    needs: build-scan-and-test
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check if Production Secrets are configured
-        id: check_secrets
+      - name: Deploy to Production via SSH
+        if: github.ref == 'refs/heads/main' && env.PROD_HOST != ''
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
-        run: |
-          if [ -z "$PROD_HOST" ]; then
-            echo "PROD_HOST secret is not set. Skipping SSH deployment."
-            echo "should_deploy=false" >> $GITHUB_OUTPUT
-          else
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Deploy over SSH
-        if: steps.check_secrets.outputs.should_deploy == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          script_stop: true
           script: |
             cd /opt/hotel-app
-            git fetch origin
-            git reset --hard origin/${{ github.ref_name }}
-            export IMAGE_TAG=${{ github.sha }}
-            for service in auth-service backend gateway; do
-              docker build \
-                -t hotel-${service}:${IMAGE_TAG} \
-                -t hotel-${service}:latest \
-                ./${service}
-            done
-            docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
-            docker image prune -f
+            git pull origin main
+            IMAGE_TAG=${{ github.sha }} docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster

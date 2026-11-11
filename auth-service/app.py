@@ -7,8 +7,11 @@ from flask import Flask, jsonify, request, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-cache = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), port=6379,
-                    decode_responses=True)
+cache = redis.Redis(
+    host=os.environ.get("REDIS_HOST", "redis"),
+    port=6379,
+    decode_responses=True
+)
 
 
 def get_db():
@@ -18,7 +21,8 @@ def get_db():
                 host=os.environ.get("DB_HOST", "db"),
                 database=os.environ.get("POSTGRES_DB", "hotel_db"),
                 user=os.environ.get("POSTGRES_USER", "hotel_admin"),
-                password=os.environ.get("POSTGRES_PASSWORD", "db_secret_password")
+                password=os.environ.get("POSTGRES_PASSWORD",
+                                        "db_secret_password")
             )
         except psycopg2.OperationalError:
             print(f"Waiting for PostgreSQL database... ({attempt + 1}/15)")
@@ -26,7 +30,7 @@ def get_db():
     raise RuntimeError("Could not connect to PostgreSQL after 30 seconds.")
 
 
-def init_auth_db():
+def init_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -38,7 +42,8 @@ def init_auth_db():
         );
     """)
     cur.execute(
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS passport_number VARCHAR(50);")
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS passport_number VARCHAR("
+        "50);")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);")
     admin_hash = generate_password_hash("admin123")
     guest_hash = generate_password_hash("guest123")
@@ -108,7 +113,8 @@ def register():
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
     elif not passport_number or not phone:
-        return jsonify({"error": "Passport and phone numbers are required"}), 400
+        return jsonify(
+            {"error": "Passport and phone numbers are required"}), 400
 
     conn = get_db()
     cur = conn.cursor()
@@ -167,5 +173,5 @@ def verify_admin():
 
 
 if __name__ == "__main__":
-    init_auth_db()
+    init_db()
     app.run(host="0.0.0.0", port=5001, debug=True)

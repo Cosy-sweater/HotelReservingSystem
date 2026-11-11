@@ -44,7 +44,6 @@ def init_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        -- Advisory lock prevents Swarm replicas from colliding on startup
         SELECT pg_advisory_xact_lock(998877);
 
         CREATE TABLE IF NOT EXISTS users (
@@ -91,7 +90,9 @@ def init_db():
             provider VARCHAR(30) DEFAULT 'Stripe',
             card_last4 VARCHAR(4) DEFAULT '4242',
             status VARCHAR(20) DEFAULT 'succeeded',
-            paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            check_in TIMESTAMP NOT NULL,
+            check_out TIMESTAMP NOT NULL
         );
 
         INSERT INTO rooms (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info) VALUES
@@ -134,11 +135,6 @@ def parse_iso_dt(dt_str):
 
 
 def sync_reservation_states(cur, force=False):
-    """
-    Synchronizes reservation statuses (upcoming -> active -> completed) and room flags.
-    - When force=False (on GET requests): runs at most once every SYNC_INTERVAL_SECONDS (default 5 mins).
-    - When force=True (on booking/payment/cancellation): executes immediately and resets the timer.
-    """
     if force:
         cache.set("sync:reservations:cooldown", "1", ex=SYNC_INTERVAL_SECONDS)
     else:
@@ -390,21 +386,30 @@ def pay_and_book(room_num):
     user = request.current_user["username"]
     hold_raw = cache.get(f"hold:room:{room_num}:{user}")
     if not hold_raw:
-        return jsonify(
-            {"error": "Your checkout hold expired or does not exist."}), 403
+        return jsonify({"error": "Your 10-minute checkout hold expired or does not exist."}), 403
 
     data = request.json if request.is_json else {}
-    provider = data.get("provider", "Stripe")
-    card_number = str(data.get("card_number", "4242")).replace(" ", "")
+    provider = (data.get("provider") or "Stripe Sandbox").strip()
+    card_number = str(data.get("card_number") or "4242").replace(" ", "").replace("-", "")
     card_last4 = card_number[-4:] if len(card_number) >= 4 else "4242"
 
     hold_data = json.loads(hold_raw)
-    req_in = parse_iso_dt(hold_data["check_in"])
-    req_out = parse_iso_dt(hold_data["check_out"])
-    nights = max(1, math.ceil((req_out - req_in).total_seconds() / 86400))
+    req_in = parse_iso_dt(data.get("check_in")) or parse_iso_dt(hold_data["check_in"])
+    req_out = parse_iso_dt(data.get("check_out")) or parse_iso_dt(hold_data["check_out"])
+
+    if (req_out - req_in) < timedelta(hours=1):
+        return jsonify({"error": "Minimum rental duration is 1 hour."}), 400
+
+    hours = max(1, int(round((req_out - req_in).total_seconds() / 3600)))
 
     conn = get_db()
     cur = conn.cursor()
+
+    conflicts = check_timeframe_conflicts(cur, room_num, req_in, req_out, ignore_user=user)
+    if conflicts:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Selected rental period conflicts with another booking."}), 409
 
     cur.execute("SELECT price FROM rooms WHERE room_number = %s;", (room_num,))
     row = cur.fetchone()
@@ -413,7 +418,8 @@ def pay_and_book(room_num):
         conn.close()
         return jsonify({"error": "Room not found"}), 404
 
-    total_amount = float(row[0]) * nights
+    hourly_rate = float(row[0])
+    total_amount = round(hourly_rate * hours, 2)
     status = "active" if req_in <= datetime.now() < req_out else "upcoming"
     transaction_id = f"TXN-{uuid.uuid4().hex[:12].upper()}"
 
@@ -424,10 +430,12 @@ def pay_and_book(room_num):
     res_id = cur.fetchone()[0]
 
     cur.execute("""
-        INSERT INTO payments (transaction_id, reservation_id, username, room_number, amount, provider, card_last4, status)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, 'succeeded');
-    """, (transaction_id, res_id, user, room_num, total_amount, provider,
-          card_last4))
+        INSERT INTO payments (
+            transaction_id, reservation_id, username, room_number,
+            amount, currency, provider, card_last4, status, check_in, check_out
+        )
+        VALUES (%s, %s, %s, %s, %s, 'RUB', %s, %s, 'succeeded', %s, %s);
+    """, (transaction_id, res_id, user, room_num, total_amount, provider, card_last4, req_in, req_out))
 
     sync_reservation_states(cur, force=True)
     conn.commit()
@@ -436,11 +444,12 @@ def pay_and_book(room_num):
 
     cache.delete(f"hold:room:{room_num}:{user}")
     return jsonify({
-        "message": f"Payment of ${total_amount:.2f} via {provider} processed! Room {room_num} booked.",
+        "message": f"Payment of {total_amount:.2f} RUB ({hours}h) via {provider} processed!",
         "transaction_id": transaction_id,
         "reservation_id": res_id,
-        "nights": nights,
+        "hours": hours,
         "total_amount": total_amount,
+        "currency": "RUB",
         "check_in": req_in.isoformat(),
         "check_out": req_out.isoformat(),
         "status": status
@@ -716,10 +725,13 @@ def get_all_payments():
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
-        SELECT transaction_id, reservation_id, username, room_number,
-               amount, currency, provider, card_last4, status, paid_at
-        FROM payments
-        ORDER BY paid_at DESC;
+        SELECT p.transaction_id, p.reservation_id, p.username, p.room_number,
+               p.amount, p.currency, p.provider, p.card_last4, p.status, p.paid_at,
+               COALESCE(p.check_in, r.check_in) AS check_in,
+               COALESCE(p.check_out, r.check_out) AS check_out
+        FROM payments p
+        LEFT JOIN reservations r ON r.id = p.reservation_id
+        ORDER BY p.paid_at DESC;
     """)
     rows = cur.fetchall()
     cur.close()
@@ -727,6 +739,12 @@ def get_all_payments():
     for r in rows:
         r["amount"] = float(r["amount"])
         r["paid_at"] = r["paid_at"].isoformat()
+        if r["check_in"] and r["check_out"]:
+            r["hours"] = max(1, int(round((r["check_out"] - r["check_in"]).total_seconds() / 3600)))
+            r["check_in"] = r["check_in"].isoformat()
+            r["check_out"] = r["check_out"].isoformat()
+        else:
+            r["hours"] = None
     return jsonify(rows)
 
 
@@ -834,9 +852,13 @@ def export_payments_csv():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT transaction_id, reservation_id, username, room_number,
-               amount, currency, provider, card_last4, status, paid_at
-        FROM payments ORDER BY paid_at DESC;
+        SELECT p.transaction_id, p.reservation_id, p.username, p.room_number,
+               COALESCE(p.check_in, r.check_in) AS check_in,
+               COALESCE(p.check_out, r.check_out) AS check_out,
+               p.amount, p.currency, p.provider, p.card_last4, p.status, p.paid_at
+        FROM payments p
+        LEFT JOIN reservations r ON r.id = p.reservation_id
+        ORDER BY p.paid_at DESC;
     """)
     rows = cur.fetchall()
     cur.close()
@@ -846,18 +868,22 @@ def export_payments_csv():
     writer = csv.writer(output)
     writer.writerow([
         "transaction_id", "reservation_id", "username", "room_number",
-        "amount", "currency", "provider", "card_last4", "status", "paid_at"
+        "check_in", "check_out", "hours", "amount", "currency",
+        "provider", "card_last4", "status", "paid_at"
     ])
     for r in rows:
-        writer.writerow(
-            [r[0], r[1], r[2], r[3], float(r[4]), r[5], r[6], r[7], r[8],
-             r[9].isoformat()])
+        c_in = r[4].isoformat() if r[4] else ""
+        c_out = r[5].isoformat() if r[5] else ""
+        hours = max(1, int(round((r[5] - r[4]).total_seconds() / 3600))) if (r[4] and r[5]) else ""
+        writer.writerow([
+            r[0], r[1], r[2], r[3], c_in, c_out, hours,
+            float(r[6]), r[7], r[8], r[9], r[10], r[11].isoformat()
+        ])
 
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=payments_export.csv"}
+        headers={"Content-Disposition": "attachment; filename=payments_export.csv"}
     )
 
 

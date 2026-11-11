@@ -98,15 +98,16 @@ input, select {
 
 button {
     padding: 9px 15px;
-    color: #dcdcdc;
+    color: white;
+
     cursor: pointer;
     font-weight: 600;
     flex-shrink: 0;
 }
 
 button:hover {
+    color: #dcdcdc;
     background: #4c4c4c;
-    color: white;
 }
 
 .btn-csv {

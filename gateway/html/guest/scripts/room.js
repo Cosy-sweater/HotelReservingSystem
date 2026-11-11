@@ -1,73 +1,34 @@
 const params = new URLSearchParams(window.location.search);
 const roomNumber = parseInt(params.get("id"));
 let currentUser = null;
-let datesInitialized = false;
-let lockedMinISO = null;
-let lastFreeFromISO = undefined;
+let currentRoom = null;
+let dateController = null;
+let renderedState = null;
 
 if (!roomNumber) window.location.href = "/";
 
-const toLocalISO = (date) => {
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 16);
-};
+// Updates both the top estimate bar AND the payment popup invoice from the current input values
+function syncAllPriceDisplays() {
+    if (!currentRoom) return;
+    const inVal = document.getElementById("check_in").value;
+    const outVal = document.getElementById("check_out").value;
+    const hours = calculateRentedHours(inVal, outVal);
+    const total = (hours * currentRoom.price).toFixed(2);
+    const timeframeStr = `${inVal.slice(0, 16).replace("T", " ")} → ${outVal.slice(0, 16).replace("T", " ")}`;
 
-function applyDateBounds(earliestFreeISO) {
-    const inInput = document.getElementById("check_in");
-    const outInput = document.getElementById("check_out");
+    document.getElementById("est-hours").textContent = `${hours} часов`;
+    document.getElementById("est-total").textContent = `${total} рублей`;
 
-    const now = new Date();
-    const maxDate = new Date(now);
-    maxDate.setFullYear(maxDate.getFullYear() + 1);
-    const maxStr = toLocalISO(maxDate);
-
-    // Lock baseline 'now' once on page load so it never ticks up every minute
-    if (!lockedMinISO) {
-        lockedMinISO = toLocalISO(now);
+    if (renderedState === "payment_form") {
+        const tfEl = document.getElementById("inv-timeframe");
+        const hrEl = document.getElementById("inv-hours");
+        const totEl = document.getElementById("inv-total");
+        const btnEl = document.getElementById("pay-btn-label");
+        if (tfEl) tfEl.textContent = timeframeStr;
+        if (hrEl) hrEl.textContent = `${hours} ч * ${currentRoom.price} Руб/ч`;
+        if (totEl) totEl.textContent = `${total} рублей`;
+        if (btnEl) btnEl.textContent = `Оплатить ${total} рублей (${hours}часов)`;
     }
-
-    // If room is booked/held, use its exact check_out (earliestFreeISO); otherwise use page-load time
-    const minStr = earliestFreeISO || lockedMinISO;
-    inInput.min = minStr;
-    inInput.max = maxStr;
-    outInput.max = maxStr;
-
-    // Only update input values on initial page load or if the room's free_from state actually changed
-    if (!datesInitialized || lastFreeFromISO !== earliestFreeISO) {
-        const paramIn = params.get("in");
-        const startVal = (!datesInitialized && paramIn && paramIn >= minStr) ? paramIn : minStr;
-
-        if (!datesInitialized || inInput.value < minStr) {
-            inInput.value = startVal;
-        }
-
-        const nextDay = new Date(new Date(inInput.value).getTime() + 86400000);
-        const paramOut = params.get("out");
-        outInput.min = inInput.value;
-
-        if (!datesInitialized) {
-            outInput.value = (paramOut && paramOut > inInput.value) ? paramOut : toLocalISO(nextDay);
-        } else if (outInput.value <= inInput.value) {
-            outInput.value = toLocalISO(nextDay);
-        }
-
-        datesInitialized = true;
-        lastFreeFromISO = earliestFreeISO;
-    }
-
-    const enforce = () => {
-        if (inInput.value < minStr) inInput.value = minStr;
-        if (inInput.value > maxStr) inInput.value = maxStr;
-        outInput.min = inInput.value;
-        if (outInput.value <= inInput.value) {
-            const plusOneDay = new Date(new Date(inInput.value).getTime() + 86400000);
-            outInput.value = toLocalISO(plusOneDay);
-        }
-        if (outInput.value > maxStr) outInput.value = maxStr;
-    };
-
-    inInput.onchange = enforce;
-    outInput.onchange = enforce;
 }
 
 async function init() {
@@ -76,13 +37,14 @@ async function init() {
         window.location.href = "/login";
         return;
     }
-    await loadRoom(false);
-    setInterval(() => loadRoom(true), 3000);
+
+    await loadRoom();
+    setInterval(loadRoom, 4000);
 }
 
-async function loadRoom(quick = false) {
+async function loadRoom() {
     try {
-        const res = await fetch(`/api/rooms${quick ? '?quick=true' : ''}`);
+        const res = await fetch("/api/rooms");
         if (res.status === 401) {
             window.location.href = "/login";
             return;
@@ -95,85 +57,166 @@ async function loadRoom(quick = false) {
             document.getElementById("room-box").innerHTML = "<h2>Room not found</h2>";
             return;
         }
-
-        // Lock date picker minimum to exact checkout date (or page load time if free now)
-        applyDateBounds(r.free_from);
-
-        const isFreeRightNow = !r.free_from;
-        const formattedFreeTime = r.free_from ? r.free_from.replace("T", " ") : "Right Now";
-
-        const tagsHtml = Array.isArray(r.additional_info) && r.additional_info.length
-            ? r.additional_info.map(t => `<span class="tag">${t}</span>`).join("")
-            : `<i>None</i>`;
-
-        document.getElementById("room-box").innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:start;">
-                        <div>
-                            <h1 style="margin:0;">Номер №${r.room_number} — ${r.room_type} (${r.area_sqm} m²)</h1>
-                            <p style="color:#475569;">${r.floor} этаж | ${r.sleeping_places} спальных мест | Вид: ${r.window_view ?? 'Standard'} | ${r.pets_allowed ? 'Можно с питомцами' : 'Без питомцев'}</p>
-                        </div>
-                        <div style="font-size:1.5rem; font-weight:800;">$${r.price}<small style="font-size:0.85rem; color:#64748b;">/ночь</small></div>
-                    </div>
-                    <div><b>Дополнительные удобства:</b><br/>${tagsHtml}</div>
-                    <div class="free-banner ${isFreeRightNow ? 'free-now' : 'free-later'}">
-                        ${isFreeRightNow
-            ? `Номер доступен`
-            : `Номер освободится после: <b>${formattedFreeTime}</b>`
-        }
-                    </div>
-                `;
-
+        currentRoom = r;
         const myHold = (r.holds || []).find(h => h.username === currentUser.username);
-        const actionArea = document.getElementById("action-area");
 
-        if (myHold) {
-            // Preserve user input in payment fields across 3-second polling cycles
-            const prevProvider = document.getElementById("pay_provider")?.value || "Stripe";
-            const prevCard = document.getElementById("pay_card")?.value || "4242424242424242";
+        // Do NOT use r.free_from as minISO if the room is currently held by this user,
+        // otherwise r.free_from equals myHold.check_out and resets the user's selected dates!
+        const effectiveMinISO = myHold ? null : r.free_from;
 
-            actionArea.innerHTML = `
-                        <div style="background:#f0fdf4; border:1px solid #86efac; padding:14px; border-radius:8px;">
-                            <p style="color:#15803d; font-weight:600; margin:0 0 10px 0;">
-                                Номер забронирована для оплаты (${myHold.ttl}с осталось): ${myHold.check_in.slice(0, 16).replace('T', ' ')} &rarr; ${myHold.check_out.slice(0, 16).replace('T', ' ')}
-                            </p>
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        if (!dateController) {
+            dateController = setupHourlyDateInputs("check_in", "check_out", {
+                minISO: effectiveMinISO,
+                initialIn: myHold ? myHold.check_in : params.get("in"),
+                initialOut: myHold ? myHold.check_out : params.get("out"),
+                defaultDurationHours: 1,
+                onChange: syncAllPriceDisplays
+            });
+        } else if (!myHold) {
+            // Only push min forward if the user does NOT have an active hold
+            dateController.updateMin(r.free_from);
+        }
+
+        renderRoomHeaderInPlace(r);
+        renderActionAreaInPlace(r, myHold);
+        syncAllPriceDisplays();
+    } catch (err) {
+        console.warn("Temporary poll error:", err);
+    }
+}
+
+function renderRoomHeaderInPlace(r) {
+    const isFreeRightNow = !r.free_from;
+    const formattedFreeTime = r.free_from ? r.free_from.replace("T", " ") : "Сейчас";
+    const bannerText = isFreeRightNow
+        ? "Номер свободен"
+        : `Номер освободится после <b>${formattedFreeTime}</b>`;
+    const bannerClass = `free-banner ${isFreeRightNow ? 'free-now' : 'free-later'}`;
+
+    const existingBanner = document.getElementById("free-status-banner");
+    if (existingBanner) {
+        existingBanner.className = bannerClass;
+        if (existingBanner.innerHTML !== bannerText) {
+            existingBanner.innerHTML = bannerText;
+        }
+        return;
+    }
+
+    const tagsHtml = Array.isArray(r.additional_info) && r.additional_info.length
+        ? r.additional_info.map(t => `<span class="tag">${t}</span>`).join("")
+        : `<i>Нет</i>`;
+
+    document.getElementById("room-box").innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:start;">
+                    <div>
+                        <h1 style="margin:0;">Номер ${r.room_number}: ${r.room_type}</h1>
+                        <p style="color:#344251;">${r.floor} этаж  |  ${r.area_sqm} м²  |  ${r.sleeping_places} спальных мест  |  Вид: ${r.window_view ?? 'Обычный'}  |  ${r.pets_allowed ? 'Можно с питомцами' : 'Нельзя с питомцами'}</p>
+                    </div>
+                    <div style="font-size:1.5rem; font-weight:500; color:#15803d;">${r.price} рублей<small>/час</small></div>
+                </div>
+                <div><b>Amenities:</b><br/>${tagsHtml}</div>
+                <div id="free-status-banner" class="${bannerClass}">${bannerText}</div>
+            `;
+}
+
+function renderActionAreaInPlace(r, myHold) {
+    const actionArea = document.getElementById("action-area");
+
+    if (myHold) {
+        if (renderedState === "payment_form") {
+            const ttlEl = document.getElementById("hold-ttl-display");
+            if (ttlEl) ttlEl.textContent = `${myHold.ttl}s`;
+            return;
+        }
+
+        renderedState = "payment_form";
+        actionArea.innerHTML = `
+                    <div class="payment-popup">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h4 style="margin:0; color:#15803d;">Комната забронирована для оплаты</h4>
+                            <span style="background:#dcfce7; color:#15803d; padding:4px 10px; border-radius:999px; font-size:0.85rem; font-weight:700;">
+                                Осталось <span id="hold-ttl-display">${myHold.ttl}s</span>
+                            </span>
+                        </div>
+
+                        <div class="invoice-box">
+                            <div class="invoice-row">
+                                <span>Номер:</span>
+                                <b>#${r.room_number} (${r.room_type})</b>
+                            </div>
+                            <div class="invoice-row">
+                                <span>Даты:</span>
+                                <b id="inv-timeframe"></b>
+                            </div>
+                            <div class="invoice-row">
+                                <span>Срок и стоимость:</span>
+                                <span id="inv-hours"></span>
+                            </div>
+                            <div class="invoice-row invoice-total">
+                                <span>Всего к оплате:</span>
+                                <span id="inv-total"></span>
+                            </div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                            <div>
+                                <label style="font-size:0.8rem; font-weight:600;">Оплата через</label>
+                                <select id="pay_provider">
+                                    <option value="Stripe">Stripe</option>
+                                    <option value="ЮКасса">ЮКасса</option>
+                                    <option value="СБП">СБП</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.8rem; font-weight:600;">Имя владельца</label>
+                                <input id="pay_holder" placeholder="IVAN IVANOV" />
+                            </div>
+                            <div>
+                                <label style="font-size:0.8rem; font-weight:600;">Номер карты</label>
+                                <input id="pay_card" placeholder="0000 0000 0000 0000" maxlength="19" />
+                            </div>
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
                                 <div>
-                                    <label style="font-size:0.8rem; font-weight:600;">Payment Service</label>
-                                    <select id="pay_provider">
-                                        <option value="Stripe" ${prevProvider === 'Stripe' ? 'selected' : ''}>Stripe</option>
-                                        <option value="YooKassa" ${prevProvider === 'YooKassa' ? 'selected' : ''}>YooKassa</option>
-                                        <option value="CloudPayments" ${prevProvider === 'CloudPayments' ? 'selected' : ''}>CloudPayments</option>
-                                    </select>
+                                    <label style="font-size:0.8rem; font-weight:600;">Действует до</label>
+                                    <input id="pay_exp" placeholder="MM/YY" maxlength="5" />
                                 </div>
                                 <div>
-                                    <label style="font-size:0.8rem; font-weight:600;">Card Number</label>
-                                    <input id="pay_card" placeholder="4242 •••• •••• 4242" value="${prevCard}" />
+                                    <label style="font-size:0.8rem; font-weight:600;">CVV</label>
+                                    <input id="pay_cvv" placeholder="123" maxlength="4" />
                                 </div>
                             </div>
-                            <button class="pay-btn" onclick="completePayment()">Pay & Confirm Booking</button>
                         </div>
-                    `;
-        } else {
-            actionArea.innerHTML = `<button onclick="holdRoom()">Оформить оплату</button>`;
+
+                        <button class="pay-btn" id="pay-btn-label" onclick="completePayment()">
+                            Оплатить
+                        </button>
+                    </div>
+                `;
+    } else {
+        if (renderedState !== "hold_btn") {
+            renderedState = "hold_btn";
+            actionArea.innerHTML = `<button onclick="holdRoom()">Перейти к оплате</button>`;
         }
-    } catch (err) {
-        console.warn("Temporary network glitch:", err);
     }
 }
 
 async function holdRoom() {
+    if (dateController) dateController.triggerEnforce();
     const conflictBox = document.getElementById("conflict-box");
     conflictBox.style.display = "none";
+
+    const checkInVal = document.getElementById("check_in").value;
+    const checkOutVal = document.getElementById("check_out").value;
 
     const res = await fetch(`/api/hold/${roomNumber}`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-            check_in: document.getElementById("check_in").value,
-            check_out: document.getElementById("check_out").value
+            check_in: checkInVal,
+            check_out: checkOutVal
         })
     });
-    const data = await res.json();
+    const data = await safeJson(res);
 
     if (!res.ok) {
         conflictBox.style.display = "block";
@@ -182,60 +225,32 @@ async function holdRoom() {
             : "");
         return;
     }
-    loadRoom(false);
+    await loadRoom();
 }
 
 async function completePayment() {
-    const provider = document.getElementById("pay_provider")?.value || "Stripe";
+    if (dateController) dateController.triggerEnforce();
+    const provider = document.getElementById("pay_provider")?.value || "Stripe Sandbox";
     const card_number = document.getElementById("pay_card")?.value || "4242";
+    const check_in = document.getElementById("check_in").value;
+    const check_out = document.getElementById("check_out").value;
+
     const res = await fetch(`/api/pay/${roomNumber}`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({provider, card_number})
+        body: JSON.stringify({provider, card_number, check_in, check_out})
     });
-    const data = await res.json();
-    alert(data.message || data.error);
-    if (res.ok) window.location.href = "/";
+    const data = await safeJson(res);
+    if (!res.ok) {
+        alert(data.error || "Payment failed");
+        return;
+    }
+    alert(
+        `${data.message}\n` +
+        `Оплаченные даты: ${data.check_in.slice(0, 16).replace('T', ' ')} -> ${data.check_out.slice(0, 16).replace('T', ' ')} (${data.hours}h)\n` +
+        `Всего: ${data.total_amount.toFixed(2)} ${data.currency}`
+    );
+    window.location.href = "/";
 }
-
-// Always formats a Date as local "YYYY-MM-DDTHH:00" (minutes stripped)
-const toLocalHourISO = (date) => {
-    const d = new Date(date);
-    d.setMinutes(0, 0, 0); // Strip minutes, seconds, milliseconds
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 13) + ":00";
-};
-
-// Rounds UP to the next whole hour for "right now" so the minimum isn't in the past
-const getCurrentNextHourISO = () => {
-    const now = new Date();
-    if (now.getMinutes() > 0 || now.getSeconds() > 0) {
-        now.setHours(now.getHours() + 1);
-    }
-    return toLocalHourISO(now);
-};
-
-const enforce = () => {
-    // 1. Force check-in minutes to :00
-    if (inInput.value) {
-        inInput.value = inInput.value.slice(0, 13) + ":00";
-    }
-    if (inInput.value < minStr) inInput.value = minStr;
-    if (inInput.value > maxStr) inInput.value = maxStr;
-
-    // 2. Minimum rental is 1 hour (+3,600,000 ms) after Check-In
-    const minCheckOutDate = new Date(new Date(inInput.value).getTime() + 3600000);
-    const minOutStr = toLocalHourISO(minCheckOutDate);
-    outInput.min = minOutStr;
-
-    // 3. Force check-out minutes to :00 and ensure it is >= Check-In + 1 hour
-    if (outInput.value) {
-        outInput.value = outInput.value.slice(0, 13) + ":00";
-    }
-    if (!outInput.value || outInput.value < minOutStr) {
-        outInput.value = minOutStr;
-    }
-    if (outInput.value > maxStr) outInput.value = maxStr;
-};
 
 init();

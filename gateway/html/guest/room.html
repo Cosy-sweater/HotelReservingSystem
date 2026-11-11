@@ -8,25 +8,35 @@
     <link href="styles/room.css" rel="stylesheet">
 </head>
 <body>
-    <a class="main-page-button" href="/">&larr; Назад в каталог</a>
+<a href="/" class="main-page-button">&larr; На главную</a>
 
     <div id="room-box" class="card">Загрузка...</div>
 
     <div class="card">
-        <h3>Выбор периода снятия</h3>
-        <div class="date-selection-container">
+        <h3>Выбор дат и времени снятия</h3>
+        <div class="card-section">
             <div>
-                <label style="font-size:0.85rem; font-weight:600;">Въезд</label>
-                <input type="datetime-local" step="3600" id="check_in" />
+                <label>Дата въезда</label>
+                <input type="datetime-local" id="check_in" />
             </div>
             <div>
-                <label style="font-size:0.85rem; font-weight:600;">Выезд</label>
+                <label>Дата выезда</label>
                 <input type="datetime-local" id="check_out" />
             </div>
         </div>
 
+        <div class="estimate-bar">
+            <div>
+                <span>Оплата за </span>
+                <b id="est-hours">1 час</b>
+            </div>
+            <div>
+                <span>К оплате: </span><b id="est-total" style="color:#15803d;">0 RUB</b>
+            </div>
+        </div>
+
         <div id="action-area"></div>
-        <div id="conflict-box" class="conflict-box"></div>
+        <div id="conflict-box" ></div>
     </div>
 
     <script src="/js/common.js"></script>

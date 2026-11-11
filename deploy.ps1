@@ -1,103 +1,50 @@
-Write-Host "Используем пользователя БД: $env:POSTGRES_POSTGRES_PASSWORD" -ForegroundColor Gray
-
 $ErrorActionPreference = "Stop"
 $StackName = "hotel_cluster"
 
-Write-Host "=== [0/5] Preparing Environment & Stopping Conflicts ===" -ForegroundColor Yellow
-
+Write-Host "=== [1/4] Preparing environment ===" -ForegroundColor Cyan
 if (-not (Test-Path ".env")) {
-    Write-Host "Файл .env не найден. Создаю базовый .env..." -ForegroundColor DarkYellow
-    @"
-POSTGRES_USER=hotel_admin
-POSTGRES_PASSWORD=db_secret_password
-POSTGRES_DB=hotel_db
-"@ | Set-Content ".env" -Encoding UTF8
+    "POSTGRES_USER=hotel_admin`nPOSTGRES_PASSWORD=db_secret_password`nPOSTGRES_DB=hotel_db" | Set-Content ".env" -Encoding UTF8
 }
 
 Get-Content ".env" | ForEach-Object {
-    $line = $_.Trim()
-    if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
-        $parts = $line -split "=", 2
-        [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1].Trim(), "Process")
+    if ($_ -match "^\s*([^#=\s]+)\s*=\s*(.*)$") {
+        [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2].Trim(), "Process")
     }
 }
 
-try {
-    $ImageTag = (git rev-parse --short HEAD 2>$null).Trim()
-    if (-not $ImageTag) { throw "No git" }
-} catch {
-    $ImageTag = Get-Date -Format "yyyyMMdd-HHmmss"
-}
-$env:IMAGE_TAG = $ImageTag
-Write-Host "Используется тег сборки IMAGE_TAG: $ImageTag" -ForegroundColor Gray
+$gitSha = git rev-parse --short HEAD 2>$null
+$env:IMAGE_TAG = if ($LASTEXITCODE -eq 0 -and $gitSha) { $gitSha.Trim() } else { Get-Date -Format "yyyyMMdd-HHmmss" }
 
-docker compose down --remove-orphans
+docker compose down --remove-orphans 2>$null | Out-Null
 
-
-Write-Host "`n=== [1/5] Building Microservice Docker Images ===" -ForegroundColor Cyan
-$servicesToBuild = @("auth-service", "backend", "gateway")
-foreach ($svc in $servicesToBuild) {
-    Write-Host "Сборка hotel-$svc ($ImageTag)..." -ForegroundColor Gray
-    docker build -t "hotel-${svc}:${ImageTag}" -t "hotel-${svc}:latest" "./$svc"
-    if ($LASTEXITCODE -ne 0) { throw "Ошибка при сборке образа hotel-$svc" }
+Write-Host "=== [2/4] Building images ===" -ForegroundColor Cyan
+foreach ($svc in @("auth-service", "backend", "gateway")) {
+    Write-Host "  Building hotel-$svc..." -ForegroundColor Gray
+    docker build -q -t "hotel-${svc}:$env:IMAGE_TAG" -t "hotel-${svc}:latest" "./$svc" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Build failed for hotel-$svc" }
 }
 
-
-Write-Host "`n=== [2/5] Initializing Docker Swarm Cluster ===" -ForegroundColor Cyan
-$swarmStatus = docker info --format '{{.Swarm.LocalNodeState}}' 2>$null
-if ($swarmStatus -ne "active") {
-    docker swarm init
-    if ($LASTEXITCODE -ne 0) {
-        docker swarm init --advertise-addr 127.0.0.1
-    }
-} else {
-    Write-Host "Swarm cluster is already active." -ForegroundColor Green
+Write-Host "=== [3/4] Adding stack to swarm ===" -ForegroundColor Cyan
+if ((docker info --format '{{.Swarm.LocalNodeState}}' 2>$null) -ne "active") {
+    docker swarm init 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { docker swarm init --advertise-addr 127.0.0.1 | Out-Null }
 }
 
+docker stack deploy --resolve-image=never --prune -c compose.yaml $StackName | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Stack deployment failed" }
 
-Write-Host "`n=== [3/5] Deploying Stack to Docker Swarm ===" -ForegroundColor Cyan
-docker stack deploy --resolve-image=never --prune -c compose.yaml $StackName
-if ($LASTEXITCODE -ne 0) {
-    throw "Ошибка при деплое стека $StackName в Docker Swarm!"
-}
-
-
-Write-Host "`n=== [4/5] Waiting for Cluster Replicas ===" -ForegroundColor Cyan
-$maxAttempts = 20
-$allReady = $false
-
-for ($i = 1; $i -le $maxAttempts; $i++) {
+Write-Host "=== [4/4] Waiting for replicas to start ===" -ForegroundColor Cyan
+for ($i = 1; $i -le 20; $i++) {
     Start-Sleep -Seconds 2
-    $serviceLines = docker stack services $StackName --format "{{.Name}}|{{.Replicas}}"
-    Write-Host "Status check ($i/$maxAttempts):" -ForegroundColor Gray
+    $status = docker stack services $StackName --format "  {{.Name}}: {{.Replicas}}"
+    Write-Host "Status check ($i/20):" -ForegroundColor Gray
+    $status | Write-Host
 
-    $pendingCount = 0
-    foreach ($line in $serviceLines) {
-        $parts = $line -split "\|"
-        $svcName = $parts[0]
-        $replicas = $parts[1]
-        Write-Host "  ${svcName}: $replicas"
-
-        $repParts = $replicas -split "/"
-        if ($repParts[0] -ne $repParts[1] -or $repParts[1] -eq "0") {
-            $pendingCount++
-        }
-    }
-
-    if ($pendingCount -eq 0 -and $serviceLines.Count -gt 0) {
-        $allReady = $true
-        break
+    if ($status -and -not ($status -notmatch ':\s*([1-9]\d*)/\1$')) {
+        Write-Host "`nCluster is LIVE at http://localhost:8080" -ForegroundColor Green
+        exit 0
     }
 }
 
-
-Write-Host "`n=== [5/5] Verifying Gateway HTTP Response ===" -ForegroundColor Cyan
-if ($allReady) {
-    Write-Host "`nCluster is LIVE at http://localhost:8080" -ForegroundColor Green
-} else {
-    Write-Host "`nВНИМАНИЕ: Не все реплики успели запуститься за отведенное время." -ForegroundColor Yellow
-    Write-Host "Статус задач кластера:" -ForegroundColor Yellow
-    docker stack ps $StackName --no-trunc
-}
-
-docker stack services $StackName
+Write-Host "`nWarning: Not all replicas started in time." -ForegroundColor Yellow
+docker stack ps $StackName --no-trunc

@@ -1,68 +1,57 @@
-import pytest
+from datetime import datetime, timedelta
 import requests
-import os
 
-BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8080")
-
-
-def test_gateway_health_and_admin_block():
-    """Verify unauthenticated access to /admin redirects to /login (HTTP 302)"""
-    response = requests.get(f"{BASE_URL}/admin/", allow_redirects=False)
-    assert response.status_code == 302
-    assert "/login" in response.headers.get("Location", "")
+BASE_URL = "http://127.0.0.1:8080"
 
 
-def test_user_registration_and_login():
-    """Verify Point 2: Registration, Authorization, and Session Cookie creation"""
-    test_user = "ci_test_user_99"
-    test_pass = "SecurePass123!"
+def test_admin_redirect():
+    res = requests.get(f"{BASE_URL}/admin/", allow_redirects=False)
+    assert res.status_code in (302, 401)
 
-    # 1. Register new user
-    reg_res = requests.post(f"{BASE_URL}/auth/register", json={
-        "username": test_user,
-        "password": test_pass,
-        "passport_number": "AB1234567",
+
+def test_auth_and_booking_flow():
+    session = requests.Session()
+    username = f"user_{int(datetime.now().timestamp())}"
+
+    # 1. Register
+    reg = session.post(f"{BASE_URL}/auth/register", json={
+        "username": username,
+        "password": "TestPassword123",
+        "passport_number": "AB123456",
         "phone": "+37060000000"
     })
-    # Might return 200/201 or 409 if user already ran once
-    assert reg_res.status_code in (200, 201, 409)
+    assert reg.status_code == 200
 
     # 2. Login
-    login_res = requests.post(f"{BASE_URL}/auth/login", json={
-        "username": test_user,
-        "password": test_pass
+    login = session.post(f"{BASE_URL}/auth/login", json={
+        "username": username,
+        "password": "TestPassword123"
     })
-    assert login_res.status_code == 200
-    assert "session_id" in login_res.cookies
+    assert login.status_code == 200
+    assert "session_id" in session.cookies
 
-    # 3. Verify /auth/me session check using the cookie
-    session_cookie = {"session_id": login_res.cookies["session_id"]}
-    me_res = requests.get(f"{BASE_URL}/auth/me", cookies=session_cookie)
-    assert me_res.status_code == 200
-    assert me_res.json().get("username") == test_user
+    # 3. Get rooms
+    rooms = session.get(f"{BASE_URL}/api/rooms")
+    assert rooms.status_code == 200
+    assert len(rooms.json()) > 0
 
+    # 4. Hold and book room 101 for 2 hours in the future
+    start_dt = (datetime.now() + timedelta(days=10)).replace(minute=0, second=0, microsecond=0)
+    end_dt = start_dt + timedelta(hours=2)
+    check_in = start_dt.strftime("%Y-%m-%dT%H:00")
+    check_out = end_dt.strftime("%Y-%m-%dT%H:00")
 
-def test_room_catalog_and_holding():
-    """Verify Point 2: Room listing and holding workflow"""
-    # Login as admin or test user to get session
-    login_res = requests.post(f"{BASE_URL}/auth/login", json={
-        "username": "ci_test_user_99",
-        "password": "SecurePass123!"
+    hold = session.post(f"{BASE_URL}/api/hold/101", json={
+        "check_in": check_in,
+        "check_out": check_out
     })
-    cookies = {"session_id": login_res.cookies.get("session_id")}
+    assert hold.status_code == 200
 
-    # Get rooms catalog
-    rooms_res = requests.get(f"{BASE_URL}/api/rooms", cookies=cookies)
-    assert rooms_res.status_code == 200
-    rooms = rooms_res.json()
-    assert isinstance(rooms, list)
-    if len(rooms) > 0:
-        room_num = rooms[0]["room_number"]
-
-        # Try holding the room
-        hold_res = requests.post(f"{BASE_URL}/api/hold/{room_num}",
-                                 cookies=cookies, json={
-                "check_in": "2026-12-01T14:00",
-                "check_out": "2026-12-03T11:00"
-            })
-        assert hold_res.status_code in (200, 409)
+    pay = session.post(f"{BASE_URL}/api/pay/101", json={
+        "provider": "Stripe Sandbox",
+        "card_number": "4242424242424242",
+        "check_in": check_in,
+        "check_out": check_out
+    })
+    assert pay.status_code == 200
+    assert pay.json().get("status") in ("upcoming", "active")

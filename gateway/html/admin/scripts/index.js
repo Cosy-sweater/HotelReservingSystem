@@ -187,18 +187,24 @@ async function loadPayments() {
     if (!res.ok) return;
     const payments = await res.json();
     document.getElementById("payments-table").innerHTML = payments.length
-        ? payments.map(p => `
-                    <tr>
-                        <td><code>${p.transaction_id}</code></td>
-                        <td><b>${p.username}</b></td>
-                        <td>#${p.room_number}</td>
-                        <td><b>$${p.amount.toFixed(2)}</b> ${p.currency}</td>
-                        <td>${p.provider} (•••• ${p.card_last4})</td>
-                        <td><span class="badge badge-paid">${p.status.toUpperCase()}</span></td>
-                        <td>${p.paid_at.slice(0, 19).replace('T', ' ')}</td>
-                    </tr>
-                `).join("")
-        : `<tr><td colspan="7" style="text-align:center;">История пуста.</td></tr>`;
+        ? payments.map(p => {
+            const periodStr = (p.check_in && p.check_out)
+                ? `${p.check_in.slice(0, 16).replace('T', ' ')} &rarr; ${p.check_out.slice(0, 16).replace('T', ' ')} <b>(${p.hours} часов)</b>`
+                : `<i>N/A</i>`;
+            return `
+                        <tr>
+                            <td><code>${p.transaction_id}</code></td>
+                            <td><b>${p.username}</b></td>
+                            <td>#${p.room_number}</td>
+                            <td>${periodStr}</td>
+                            <td><b>${p.amount.toFixed(2)}</b> Руб</td>
+                            <td>${p.provider} (•••• ${p.card_last4})</td>
+                            <td><span class="badge badge-paid">${p.status.toUpperCase()}</span></td>
+                            <td>${p.paid_at.slice(0, 19).replace('T', ' ')}</td>
+                        </tr>
+                    `;
+        }).join("")
+        : `<tr><td colspan="8" style="text-align:center;">No payment records yet.</td></tr>`;
 }
 
 async function loadUsers() {

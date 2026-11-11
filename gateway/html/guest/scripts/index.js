@@ -1,14 +1,5 @@
 let allRooms = [];
 
-// Format date to local YYYY-MM-DDTHH:00 (whole hours only)
-const toLocalHourISO = (date) => {
-    const d = new Date(date);
-    d.setMinutes(0, 0, 0);
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 13) + ":00";
-};
-
-// Set default filter timeframe: Now -> Tomorrow
 function setDefaultDates() {
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 86400000);
