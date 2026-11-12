@@ -86,14 +86,18 @@ def init_db():
             username VARCHAR(50) NOT NULL,
             room_number INT NOT NULL,
             amount NUMERIC(10,2) NOT NULL,
-            currency VARCHAR(10) DEFAULT 'USD',
+            currency VARCHAR(10) DEFAULT 'RUB',
             provider VARCHAR(30) DEFAULT 'Stripe',
             card_last4 VARCHAR(4) DEFAULT '4242',
             status VARCHAR(20) DEFAULT 'succeeded',
             paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            check_in TIMESTAMP NOT NULL,
-            check_out TIMESTAMP NOT NULL
+            check_in TIMESTAMP NULL,
+            check_out TIMESTAMP NULL
         );
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS check_in TIMESTAMP NULL;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS check_out TIMESTAMP NULL;
+        ALTER TABLE payments ALTER COLUMN check_in DROP NOT NULL;
+        ALTER TABLE payments ALTER COLUMN check_out DROP NOT NULL;
 
         INSERT INTO rooms (room_number, floor, room_type, sleeping_places, pets_allowed, area_sqm, window_view, price, additional_info) VALUES
         (101, 1, 'Standard Single', 1, false, 20.0, NULL, 100, NULL),
@@ -389,7 +393,7 @@ def pay_and_book(room_num):
         return jsonify({"error": "Your 10-minute checkout hold expired or does not exist."}), 403
 
     data = request.json if request.is_json else {}
-    provider = (data.get("provider") or "Stripe Sandbox").strip()
+    provider = (data.get("provider") or "Stripe").strip()
     card_number = str(data.get("card_number") or "4242").replace(" ", "").replace("-", "")
     card_last4 = card_number[-4:] if len(card_number) >= 4 else "4242"
 

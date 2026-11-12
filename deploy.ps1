@@ -14,7 +14,7 @@ Get-Content ".env" | ForEach-Object {
 
 $env:IMAGE_TAG = Get-Date -Format "yyyyMMdd-HHmmss"
 
-docker compose down --remove-orphans 2>$null | Out-Null
+docker compose down --remove-orphans
 
 Write-Host "=== [2/4] Building images ===" -ForegroundColor Cyan
 foreach ($svc in @("auth-service", "backend", "gateway")) {
