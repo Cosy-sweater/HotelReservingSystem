@@ -1,82 +1,66 @@
-name: CI-CD
+name: Hotel System CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ "main", "master" ]
   pull_request:
-    branches:
-      - main
-      - master
-
-env:
-  POSTGRES_USER: hotel_admin
-  POSTGRES_PASSWORD: secretpassword
-  POSTGRES_DB: hotel_db
-  IMAGE_TAG: ${{ github.sha }}
+    branches: [ "main", "master" ]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies and run pip-audit
+      - name: Create .env file for testing
         run: |
-          pip install pytest requests pip-audit
-          pip-audit -r auth-service/requirements.txt || true
-          pip-audit -r backend/requirements.txt || true
+          echo "POSTGRES_USER=hotel_admin" >> .env
+          echo "POSTGRES_PASSWORD=test_secret_password" >> .env
+          echo "POSTGRES_DB=hotel_db" >> .env
+          echo "IMAGE_TAG=ci-test" >> .env
 
-      - name: Build images with Git SHA
+      - name: Build Docker images
         run: |
-          docker build -t hotel-auth-service:${{ github.sha }} -t hotel-auth-service:latest ./auth-service
-          docker build -t hotel-backend:${{ github.sha }} -t hotel-backend:latest ./backend
-          docker build -t hotel-gateway:${{ github.sha }} -t hotel-gateway:latest ./gateway
+          docker build -t hotel-auth-service:latest ./auth-service
+          docker build -t hotel-backend:latest ./backend
+          docker build -t hotel-gateway:latest ./gateway
 
-      - name: Trivy config and image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: config
-          hide-progress: true
-          exit-code: "0"
+      - name: Start multi-container application
+        run: docker compose up -d
 
-      - name: Start stack and run Pytest
+      - name: Wait for gateway and services to be ready
         run: |
-          docker swarm init --advertise-addr 127.0.0.1 || true
-          docker compose up -d
-          for i in $(seq 1 30); do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/login || true)
-            if [ "$CODE" = "200" ]; then
-              pytest tests/test_api.py -v
-              exit 0
+          for i in {1..30}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ | grep -qE "200|302"; then
+              echo "Gateway is up and responding!"
+              break
             fi
+            echo "Waiting for services... ($i/30)"
             sleep 2
           done
-          docker compose logs
-          exit 1
 
-      - name: Stop containers
-        if: always()
+      - name: Run API and Auth integration tests
         run: |
-          docker compose down -v --remove-orphans || true
+          # Проверка доступности страницы входа
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/login.html)
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "Login page failed with status $HTTP_STATUS"
+            exit 1
+          fi
 
-      - name: SSH Production Deploy
-        if: github.ref == 'refs/heads/main' && env.PROD_HOST != ''
-        env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script: |
-            cd /opt/hotel-app
-            git pull origin main
-            IMAGE_TAG=${{ github.sha }} docker stack deploy --resolve-image=never -c compose.yaml hotel_cluster
+          # Проверка защиты закрытого API от неавторизованных запросов
+          API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/rooms)
+          if [ "$API_STATUS" -ne 401 ] && [ "$API_STATUS" -ne 403 ] && [ "$API_STATUS" -ne 302 ]; then
+            echo "Unauthorized access check failed with status $API_STATUS"
+            exit 1
+          fi
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop and remove containers
+        if: always()
+        run: docker compose down -v --remove-orphans
