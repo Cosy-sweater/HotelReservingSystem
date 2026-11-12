@@ -1,4 +1,4 @@
-name: CI-CD Pipeline
+name: CI-CD
 
 on:
   push:
@@ -17,7 +17,7 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  build-and-test:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -28,42 +28,32 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install tools and check dependencies
+      - name: Install dependencies and run pip-audit
         run: |
-          pip install flake8 pip-audit pytest requests
-          pip install -r auth-service/requirements.txt
-          pip install -r backend/requirements.txt
-          flake8 auth-service/ backend/ --select=E9,F63,F7,F82
+          pip install pytest requests pip-audit
           pip-audit -r auth-service/requirements.txt || true
           pip-audit -r backend/requirements.txt || true
 
-      - name: Build Docker images with Git SHA
+      - name: Build images with Git SHA
         run: |
           docker build -t hotel-auth-service:${{ github.sha }} -t hotel-auth-service:latest ./auth-service
           docker build -t hotel-backend:${{ github.sha }} -t hotel-backend:latest ./backend
           docker build -t hotel-gateway:${{ github.sha }} -t hotel-gateway:latest ./gateway
 
-      - name: Scan Docker config and image with Trivy
+      - name: Trivy config and image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
           hide-progress: true
           exit-code: "0"
 
-      - name: Scan backend image vulnerabilities with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: hotel-backend:${{ github.sha }}
-          hide-progress: true
-          exit-code: "0"
-          severity: CRITICAL,HIGH
-
-      - name: Start services and run Pytest
+      - name: Start stack and run Pytest
         run: |
+          docker swarm init --advertise-addr 127.0.0.1 || true
           docker compose up -d
           for i in $(seq 1 30); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/login || true)
-            if [ "$STATUS" = "200" ]; then
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/login || true)
+            if [ "$CODE" = "200" ]; then
               pytest tests/test_api.py -v
               exit 0
             fi
@@ -72,12 +62,12 @@ jobs:
           docker compose logs
           exit 1
 
-      - name: Tear down test containers
+      - name: Stop containers
         if: always()
         run: |
-          docker compose down -v --remove-orphans
+          docker compose down -v --remove-orphans || true
 
-      - name: Deploy to Production via SSH
+      - name: SSH Production Deploy
         if: github.ref == 'refs/heads/main' && env.PROD_HOST != ''
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}

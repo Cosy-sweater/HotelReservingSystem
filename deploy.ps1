@@ -12,8 +12,7 @@ Get-Content ".env" | ForEach-Object {
     }
 }
 
-$gitSha = git rev-parse --short HEAD 2>$null
-$env:IMAGE_TAG = if ($LASTEXITCODE -eq 0 -and $gitSha) { $gitSha.Trim() } else { Get-Date -Format "yyyyMMdd-HHmmss" }
+$env:IMAGE_TAG = Get-Date -Format "yyyyMMdd-HHmmss"
 
 docker compose down --remove-orphans 2>$null | Out-Null
 
